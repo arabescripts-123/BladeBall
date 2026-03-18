@@ -314,11 +314,12 @@ RunService.RenderStepped:Connect(function()
     -- ETA
     local eta = dist / effectiveSpeed
 
-    -- Threshold ultra-preciso: base minima + buffer dinamico + ping
-    local baseOffset = 0.035
-    local dynamicBuffer = math.clamp(10 / (effectiveSpeed + 1), 0.01, 0.20)
+    -- Threshold: base + buffer dinamico + ping
+    -- Bola lenta precisa de MAIS antecedencia
+    local baseOffset = 0.05
+    local dynamicBuffer = math.clamp(20 / (effectiveSpeed + 1), 0.02, 0.35)
     local threshold = pingVal + baseOffset + dynamicBuffer
-    if threshold < 0.08 then threshold = 0.08 end
+    if threshold < 0.12 then threshold = 0.12 end
 
     -- Checa se EU sou o alvo
     local targetName = ""
