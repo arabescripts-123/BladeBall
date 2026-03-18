@@ -159,8 +159,8 @@ log("", WHITE)
 log("=== AUTO PARRY ATIVO COM DEBUG ===", CYAN)
 log("Cada decisao sera logada em tempo real", YELLOW)
 
-local SAFETY_OFFSET = 0.20 -- margem maior pra compensar lag/fps
-local PARRY_ANIM_CD = 1.5 -- cooldown da animacao de bater no jogo
+local SAFETY_OFFSET = 0.20
+local PARRY_ANIM_CD = 0.45 -- cooldown real entre parrys (animacao ~0.5s)
 local lastParryTime = 0
 local alreadyParried = false
 local prevDist = math.huge
