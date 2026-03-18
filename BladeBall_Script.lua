@@ -293,8 +293,18 @@ RunService.RenderStepped:Connect(function()
     local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 50
     lastBallVel = ballVel
 
-    -- Predicao: posicao futura considerando velocidade do jogador
+    -- Threshold inteligente: combina distancia, velocidade e ping
+    -- Formula: quanto tempo a bola leva pra chegar * fator de antecedencia
+    -- Bola rapida longe = bate cedo | Bola lenta perto = bate cedo | Bola lenta longe = espera
     local pingVal = getPing()
+    local timeToArrive = closingSpeed > 5 and (dist / closingSpeed) or 999
+    -- Fator de antecedencia: sempre bate quando falta (ping + margem) pra chegar
+    -- Margem escala com velocidade: bola rapida = precisa de mais antecedencia
+    local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.001, 0, 0.15)
+    -- Adiciona buffer de distancia curta (perto = mais urgente)
+    local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
+    local threshold = anticipation + proximityBonus
+    threshold = math.clamp(threshold, 0.10, 0.80)
     local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
     local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
     local predictedDist = (predictedBallPos - predictedPlayerPos).Magnitude
@@ -307,22 +317,13 @@ RunService.RenderStepped:Connect(function()
         alreadyParried = false
     end
 
-    -- Velocidade efetiva
-    local effectiveSpeed = closingSpeed > 10 and closingSpeed or (manualSpeed > 10 and manualSpeed or ballVel.Magnitude)
-    if effectiveSpeed < 1 then effectiveSpeed = 1 end
+    -- Velocidade efetiva: SOMENTE closingSpeed
+    -- Nao usa fallback de velocidade total — evita parry quando bola passa de lado
+    local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
 
-    -- ETA
+    -- ETA baseado na velocidade real de aproximacao
     local eta = dist / effectiveSpeed
 
-    -- Threshold: base + buffer dinamico + ping + ajuste por distancia
-    -- Perto = bate CEDO (threshold maior), Longe = pode esperar
-    local baseOffset = 0.05
-    local speedBuffer = math.clamp(20 / (effectiveSpeed + 1), 0.02, 0.35)
-    local distBuffer = math.clamp(25 / (dist + 1), 0.01, 0.25)
-    local threshold = pingVal + baseOffset + speedBuffer + distBuffer
-    if threshold < 0.12 then threshold = 0.12 end
-    -- Cap maximo pra nao bater cedo demais quando longe
-    if threshold > 0.75 then threshold = 0.75 end
 
     -- Checa se EU sou o alvo
     local targetName = ""
@@ -331,8 +332,9 @@ RunService.RenderStepped:Connect(function()
     local timeSinceParry = now - lastParryTime
 
     -- Modo clash: dist < 60, sou alvo, cooldown reduzido
-    local isClash = imTarget and dist < 60 and effectiveSpeed > 80
-    local cooldown = isClash and 0.06 or 0.50 -- clash ultra rapido
+    local isClash = imTarget and dist < 60 and closingSpeed > 80
+    local isUltraClash = imTarget and dist < 40 and closingSpeed > 150
+    local cooldown = isUltraClash and 0 or (isClash and 0.04 or 0.50)
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
