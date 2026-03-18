@@ -204,62 +204,38 @@ createSectionLabel("⚔ COMBATE", 48)
 local autoParryBtn, autoParryInd = createButton("Auto Parry", UDim2.new(0, 12, 0, 68))
 local parryKeyBox = createKeyBox("P", UDim2.new(0, 162, 0, 68))
 
--- Slider distancia do parry
-local distLabel = Instance.new("TextLabel")
-distLabel.Parent = MainFrame
-distLabel.BackgroundTransparency = 1
-distLabel.Position = UDim2.new(0, 14, 0, 106)
-distLabel.Size = UDim2.new(0, 200, 0, 14)
-distLabel.Font = Enum.Font.GothamSemibold
-distLabel.Text = "Distancia Parry: 15"
-distLabel.TextColor3 = Color3.fromRGB(200, 160, 160)
-distLabel.TextSize = 10
-distLabel.TextXAlignment = Enum.TextXAlignment.Left
+-- Info label do auto parry
+local parryInfoLabel = Instance.new("TextLabel")
+parryInfoLabel.Parent = MainFrame
+parryInfoLabel.BackgroundTransparency = 1
+parryInfoLabel.Position = UDim2.new(0, 14, 0, 104)
+parryInfoLabel.Size = UDim2.new(0, 212, 0, 14)
+parryInfoLabel.Font = Enum.Font.GothamSemibold
+parryInfoLabel.Text = "Auto | Vel:0 Dist:0"
+parryInfoLabel.TextColor3 = Color3.fromRGB(200, 160, 160)
+parryInfoLabel.TextSize = 10
+parryInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local distTrack = Instance.new("Frame")
-distTrack.Parent = MainFrame
-distTrack.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
-distTrack.Position = UDim2.new(0, 14, 0, 122)
-distTrack.Size = UDim2.new(0, 212, 0, 6)
-distTrack.BorderSizePixel = 0
-Instance.new("UICorner", distTrack).CornerRadius = UDim.new(1, 0)
+createSeparator(124)
+createSectionLabel("🎯 MOVIMENTO", 129)
 
-local distFill = Instance.new("Frame")
-distFill.Parent = distTrack
-distFill.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-distFill.Size = UDim2.new(0.3, 0, 1, 0)
-distFill.BorderSizePixel = 0
-Instance.new("UICorner", distFill).CornerRadius = UDim.new(1, 0)
+local clickTpBtn, clickTpInd = createButton("Click TP", UDim2.new(0, 12, 0, 149))
+local tpKeyBox = createKeyBox("Q", UDim2.new(0, 162, 0, 149))
 
-local distHandle = Instance.new("Frame")
-distHandle.Parent = distTrack
-distHandle.BackgroundColor3 = Color3.fromRGB(255, 120, 120)
-distHandle.Position = UDim2.new(0.3, 0, 0.5, -8)
-distHandle.Size = UDim2.new(0, 16, 0, 16)
-distHandle.BorderSizePixel = 0
-Instance.new("UICorner", distHandle).CornerRadius = UDim.new(1, 0)
+local espBtn, espInd = createButton("ESP Players", UDim2.new(0, 12, 0, 189))
+local espKeyBox = createKeyBox("J", UDim2.new(0, 162, 0, 189))
 
-createSeparator(138)
-createSectionLabel("🎯 MOVIMENTO", 143)
+createSeparator(229)
+createSectionLabel("🛡 UTILIDADES", 234)
 
-local clickTpBtn, clickTpInd = createButton("Click TP", UDim2.new(0, 12, 0, 163))
-local tpKeyBox = createKeyBox("Q", UDim2.new(0, 162, 0, 163))
+local speedBtn, speedInd = createButton("Speed", UDim2.new(0, 12, 0, 254))
+local speedBox = createKeyBox("50", UDim2.new(0, 162, 0, 254))
 
-local espBtn, espInd = createButton("ESP Players", UDim2.new(0, 12, 0, 203))
-local espKeyBox = createKeyBox("J", UDim2.new(0, 162, 0, 203))
-
-createSeparator(243)
-createSectionLabel("🛡 UTILIDADES", 248)
-
-local speedBtn, speedInd = createButton("Speed", UDim2.new(0, 12, 0, 268))
-local speedBox = createKeyBox("50", UDim2.new(0, 162, 0, 268))
-
-local flyBtn, flyInd = createButton("Fly", UDim2.new(0, 12, 0, 308))
-local flyKeyBox = createKeyBox("F", UDim2.new(0, 162, 0, 308))
+local flyBtn, flyInd = createButton("Fly", UDim2.new(0, 12, 0, 294))
+local flyKeyBox = createKeyBox("F", UDim2.new(0, 162, 0, 294))
 
 -- ============ VARIAVEIS ============
 local autoParryEnabled = false
-local parryDistance = 15
 local clickTpEnabled = false
 local espEnabled = false
 local speedEnabled = false
@@ -341,10 +317,12 @@ local function doParry()
     end)
 end
 
--- Tracking: a bola esta me perseguindo?
+-- Tracking inteligente
+local prevBallPos = nil
 local prevDist = math.huge
-local approachCount = 0
+local approachFrames = 0
 local alreadyParried = false
+local REACTION_TIME = 0.18 -- tempo de reacao humano simulado (segundos)
 
 RunService.Heartbeat:Connect(function()
     if not autoParryEnabled then return end
@@ -354,30 +332,53 @@ RunService.Heartbeat:Connect(function()
     if not root then return end
 
     local ball = findBall()
-    if not ball then prevDist = math.huge; approachCount = 0; return end
+    if not ball then
+        prevDist = math.huge
+        prevBallPos = nil
+        approachFrames = 0
+        return
+    end
 
-    local dist = (ball.Position - root.Position).Magnitude
+    local ballPos = ball.Position
+    local rootPos = root.Position
+    local dist = (ballPos - rootPos).Magnitude
     local now = tick()
 
-    -- Checa se a bola esta se aproximando de mim frame a frame
-    if dist < prevDist - 0.1 then
-        approachCount = approachCount + 1
+    -- Calcula velocidade real da bola
+    local ballSpeed = 0
+    if prevBallPos then
+        ballSpeed = (ballPos - prevBallPos).Magnitude * 60 -- studs/sec aprox
+    end
+    prevBallPos = ballPos
+
+    -- Checa se a bola esta se aproximando
+    if dist < prevDist - 0.05 then
+        approachFrames = approachFrames + 1
     else
-        -- Bola parou de se aproximar ou se afastou = nao sou mais o alvo
-        approachCount = 0
+        approachFrames = 0
         alreadyParried = false
     end
     prevDist = dist
 
-    -- So da parry se:
-    -- 1. A bola esta se aproximando ha pelo menos 3 frames seguidos (confirmado que sou o alvo)
-    -- 2. Esta dentro da distancia
-    -- 3. Ainda nao dei parry nessa "investida"
+    -- Calcula distancia ideal de parry baseado na velocidade
+    -- Quanto mais rapida a bola, mais cedo preciso reagir
+    -- distancia = velocidade * tempo_de_reacao
+    local idealDist = math.clamp(ballSpeed * REACTION_TIME, 8, 60)
+
+    -- Atualiza info na GUI
+    if autoParryEnabled then
+        parryInfoLabel.Text = string.format("Vel:%.0f Dist:%.0f Ideal:%.0f", ballSpeed, dist, idealDist)
+    end
+
+    -- Condicoes para dar parry:
+    -- 1. Bola se aproximando por 3+ frames (confirmado que sou alvo)
+    -- 2. Distancia atual <= distancia ideal calculada
+    -- 3. Nao dei parry nessa investida ainda
     -- 4. Cooldown minimo
-    if approachCount >= 3 and dist <= parryDistance and not alreadyParried and (now - lastParryTime) > 0.3 then
+    if approachFrames >= 3 and dist <= idealDist and not alreadyParried and (now - lastParryTime) > 0.3 then
         lastParryTime = now
         alreadyParried = true
-        approachCount = 0
+        approachFrames = 0
         doParry()
     end
 end)
@@ -523,27 +524,7 @@ RunService.Heartbeat:Connect(function()
     end)
 end)
 
--- ============ SLIDER DISTANCIA ============
-local distDragging = false
-distHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then distDragging = true end
-end)
-UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then distDragging = false end
-end)
-UIS.InputChanged:Connect(function(input)
-    if distDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local mousePos = UIS:GetMouseLocation()
-        local trackPos = distTrack.AbsolutePosition.X
-        local trackSize = distTrack.AbsoluteSize.X
-        local rel = math.clamp(mousePos.X - trackPos, 0, trackSize)
-        local pct = rel / trackSize
-        parryDistance = 5 + (pct * 45) -- 5 a 50
-        distHandle.Position = UDim2.new(pct, 0, 0.5, -8)
-        distFill.Size = UDim2.new(pct, 0, 1, 0)
-        distLabel.Text = string.format("Distancia Parry: %.0f", parryDistance)
-    end
-end)
+
 
 -- ============ BUTTON CLICKS ============
 autoParryBtn.MouseButton1Click:Connect(function()
