@@ -318,9 +318,11 @@ RunService.RenderStepped:Connect(function()
     -- Perto = bate CEDO (threshold maior), Longe = pode esperar
     local baseOffset = 0.05
     local speedBuffer = math.clamp(20 / (effectiveSpeed + 1), 0.02, 0.35)
-    local distBuffer = math.clamp(30 / (dist + 1), 0.01, 0.30) -- perto = mais margem
+    local distBuffer = math.clamp(25 / (dist + 1), 0.01, 0.25)
     local threshold = pingVal + baseOffset + speedBuffer + distBuffer
     if threshold < 0.12 then threshold = 0.12 end
+    -- Cap maximo pra nao bater cedo demais quando longe
+    if threshold > 0.75 then threshold = 0.75 end
 
     -- Checa se EU sou o alvo
     local targetName = ""
@@ -330,7 +332,7 @@ RunService.RenderStepped:Connect(function()
 
     -- Modo clash: dist < 60, sou alvo, cooldown reduzido
     local isClash = imTarget and dist < 60 and effectiveSpeed > 80
-    local cooldown = isClash and 0.08 or 0.50 -- 0.50s normal evita double-parry
+    local cooldown = isClash and 0.06 or 0.50 -- clash ultra rapido
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
