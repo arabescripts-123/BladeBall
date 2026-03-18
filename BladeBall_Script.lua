@@ -201,11 +201,12 @@ local function doParry()
     pcall(function()
         if parryButtonPress then parryButtonPress:Fire() end
     end)
+    -- Simula tecla E (keybind principal do parry)
     pcall(function()
         local vim = game:GetService("VirtualInputManager")
-        vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.defer(function()
-            vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
         end)
     end)
 end
@@ -287,8 +288,9 @@ RunService.RenderStepped:Connect(function()
     local approaching = closingSpeed > 5
 
     -- Deteccao de aceleracao brusca (anti-curve/pull)
+    -- So ativa se bola vindo na minha direcao E perto
     local acceleration = (ballVel - lastBallVel).Magnitude
-    local suddenSpike = acceleration > 50 and dt > 0 and dt < 0.5
+    local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 50
     lastBallVel = ballVel
 
     -- Predicao: posicao futura considerando velocidade do jogador
@@ -345,8 +347,8 @@ RunService.RenderStepped:Connect(function()
         if isClash then table.insert(checks, "CL") end
 
         local predHitLog = willHit and closingSpeed > 0
-        local spikeParry = suddenSpike and imTarget and dist < 80
-        local shouldFire = imTarget and ((approaching or predHitLog) and (eta <= threshold or predHitLog) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
+        local spikeParryLog = suddenSpike and imTarget
+        local shouldFire = imTarget and ((approaching or predHitLog) and (eta <= threshold or predHitLog) or spikeParryLog) and not alreadyParried and timeSinceParry > cooldown
 
         local color = WHITE
         if shouldFire then color = GREEN
@@ -363,7 +365,7 @@ RunService.RenderStepped:Connect(function()
 
     -- LOGICA DE PARRY
     local predHit = willHit and closingSpeed > 0
-    local spikeParry = suddenSpike and imTarget and dist < 80
+    local spikeParry = suddenSpike and imTarget
     local shouldParry = imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
 
     if shouldParry then
