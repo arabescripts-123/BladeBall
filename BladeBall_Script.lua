@@ -169,7 +169,8 @@ local lastLogTime = 0
 local HITBOX_RADIUS = 15
 local cachedPing = 0.08
 local lastPingTime = 0
-local lastBallVel = Vector3.zero -- pra detectar aceleracao brusca
+local lastBallVel = Vector3.zero
+local parryCount = 0 -- conta parrys consecutivos pra ajustar antecedencia
 
 -- Pre-sample ping a cada 1s (evita overhead por frame)
 local function getPing()
@@ -236,6 +237,7 @@ if ballsFolder then
         prevDist = math.huge
         prevBallPos = nil
         alreadyParried = false
+        parryCount = 0
     end)
 end
 
@@ -293,17 +295,16 @@ RunService.RenderStepped:Connect(function()
     local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 50
     lastBallVel = ballVel
 
-    -- Threshold inteligente: combina distancia, velocidade e ping
-    -- Formula: quanto tempo a bola leva pra chegar * fator de antecedencia
-    -- Bola rapida longe = bate cedo | Bola lenta perto = bate cedo | Bola lenta longe = espera
+    -- Threshold inteligente: combina distancia, velocidade, ping e historico
     local pingVal = getPing()
-    local timeToArrive = closingSpeed > 5 and (dist / closingSpeed) or 999
-    -- Fator de antecedencia: sempre bate quando falta (ping + margem) pra chegar
-    -- Margem escala com velocidade: bola rapida = precisa de mais antecedencia
-    local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.001, 0, 0.15)
-    -- Adiciona buffer de distancia curta (perto = mais urgente)
+    -- Fator de antecedencia: ping + base + escala com velocidade
+    local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.0012, 0, 0.18)
+    -- Bonus de proximidade (perto = mais urgente)
     local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
-    local threshold = anticipation + proximityBonus
+    -- Bonus de parrys consecutivos: cada parry seguido = bola mais rapida no proximo
+    -- Aumenta threshold progressivamente pra antecipar a aceleracao
+    local accelBonus = math.clamp(parryCount * 0.03, 0, 0.20)
+    local threshold = anticipation + proximityBonus + accelBonus
     threshold = math.clamp(threshold, 0.10, 0.80)
     local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
     local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
@@ -377,10 +378,11 @@ RunService.RenderStepped:Connect(function()
     if shouldParry then
         lastParryTime = now
         alreadyParried = true
+        parryCount = parryCount + 1
 
-        local mode = spikeParry and "SPIKE" or (isClash and "CLASH" or (willHit and "PRED" or "NORMAL"))
-        log(string.format("!!! PARRY %s !!! E:%.3f D:%.0f CS:%.0f V:%.0f A:%.0f %s",
-            mode, eta, dist, closingSpeed, effectiveSpeed, acceleration, targetName), RED)
+        local mode = spikeParry and "SPIKE" or (isUltraClash and "ULTRA" or (isClash and "CLASH" or (willHit and "PRED" or "NORMAL")))
+        log(string.format("!!! PARRY %s !!! E:%.3f D:%.0f CS:%.0f V:%.0f A:%.0f PC:%d %s",
+            mode, eta, dist, closingSpeed, effectiveSpeed, acceleration, parryCount, targetName), RED)
 
         doParry()
     end
