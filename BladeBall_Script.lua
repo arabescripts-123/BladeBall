@@ -159,7 +159,8 @@ log("", WHITE)
 log("=== AUTO PARRY ATIVO COM DEBUG ===", CYAN)
 log("Cada decisao sera logada em tempo real", YELLOW)
 
-local SAFETY_OFFSET = 0.05
+local SAFETY_OFFSET = 0.20 -- margem maior pra compensar lag/fps
+local PARRY_ANIM_CD = 1.5 -- cooldown da animacao de bater no jogo
 local lastParryTime = 0
 local alreadyParried = false
 local prevDist = math.huge
@@ -167,6 +168,7 @@ local prevBallPos = nil
 local prevTime = tick()
 local manualSpeed = 0
 local lastLogTime = 0
+local distHistory = {}
 
 local function getPing()
     local ok, p = pcall(function() return player:GetNetworkPing() end)
@@ -281,8 +283,17 @@ RunService.RenderStepped:Connect(function()
     end
     prevBallPos = ball.Position
 
-    -- Approaching: sem margem rigida, usa historico de 3 frames
-    local approaching = dist < prevDist
+    -- Historico de distancias (5 frames) pra suavizar approaching
+    table.insert(distHistory, dist)
+    if #distHistory > 5 then table.remove(distHistory, 1) end
+
+    local approaching = false
+    if #distHistory >= 3 then
+        approaching = distHistory[#distHistory] < distHistory[1]
+    else
+        approaching = dist < prevDist
+    end
+
     if not approaching then
         alreadyParried = false
     end
@@ -291,40 +302,33 @@ RunService.RenderStepped:Connect(function()
     local pingVal = getPing()
     local eta = dist / ballSpeed
     local threshold = pingVal + SAFETY_OFFSET
-    if threshold < 0.15 then threshold = 0.15 end
+    if threshold < 0.25 then threshold = 0.25 end
+
+    -- Checa se EU sou o alvo
+    local targetName = ""
+    pcall(function() targetName = ball:GetAttribute("target") or "" end)
+    local imTarget = targetName == player.Name
+    local timeSinceParry = now - lastParryTime
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
         lastLogTime = now
 
         local checks = {}
-        local targetName2 = ""
-        pcall(function() targetName2 = ball:GetAttribute("target") or "" end)
-        local imTgt = targetName2 == player.Name
-
         table.insert(checks, approaching and "APROX:SIM" or "APROX:NAO")
-        table.insert(checks, imTgt and "ALVO:SIM" or ("ALVO:NAO(" .. targetName2 .. ")"))
+        table.insert(checks, imTarget and "ALVO:SIM" or ("ALVO:NAO(" .. targetName .. ")"))
         table.insert(checks, string.format("ETA:%.3f", eta))
         table.insert(checks, string.format("THRESH:%.3f", threshold))
-        table.insert(checks, eta <= threshold and "ETA<=THRESH:SIM" or "ETA<=THRESH:NAO")
-        table.insert(checks, alreadyParried and "JA_PARRIED:SIM" or "JA_PARRIED:NAO")
-        table.insert(checks, string.format("CD:%.2f", now - lastParryTime))
+        table.insert(checks, eta <= threshold and "ETA<=T:SIM" or "ETA<=T:NAO")
+        table.insert(checks, alreadyParried and "PARRIED:SIM" or "PARRIED:NAO")
+        table.insert(checks, string.format("CD:%.2f", timeSinceParry))
         table.insert(checks, "SPD:" .. speedSource)
-        table.insert(checks, ball.Anchored and "ANCHORED!" or "ok")
 
-        local wouldParry = false
-        local clashMode = imTgt and dist < 50 and ballSpeed > 80
-        if clashMode and (now - lastParryTime) > 0.05 then
-            wouldParry = true
-        elseif imTgt and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
-            wouldParry = true
-        end
-
-        if clashMode then table.insert(checks, "CLASH!") end
+        local wouldParry = imTarget and approaching and eta <= threshold and not alreadyParried and timeSinceParry > PARRY_ANIM_CD
 
         local color = WHITE
         if wouldParry then color = GREEN
-        elseif approaching then color = YELLOW end
+        elseif imTarget and approaching then color = YELLOW end
 
         log(string.format("D:%.0f V:%.0f %s %s",
             dist, ballSpeed,
@@ -335,35 +339,14 @@ RunService.RenderStepped:Connect(function()
 
     prevDist = dist
 
-    -- Checa se EU sou o alvo via atributo "target" na bola
-    local targetName = ""
-    pcall(function() targetName = ball:GetAttribute("target") or "" end)
-    local imTarget = targetName == player.Name
-
-    -- Detecta CLASH: bola perto + velocidade alta + eu sou alvo
-    local CLASH_DIST = 50
-    local CLASH_COOLDOWN = 0.05 -- spam rapido no clash
-    local NORMAL_COOLDOWN = 0.25
-    local inClash = imTarget and dist < CLASH_DIST and ballSpeed > 80
-
-    local cooldown = inClash and CLASH_COOLDOWN or NORMAL_COOLDOWN
-
     -- LOGICA DE PARRY
-    -- Normal: espera ETA <= threshold
-    -- Clash: spamma parry assim que sou alvo e bola ta perto
-    local shouldParry = false
-    if inClash and (now - lastParryTime) > cooldown then
-        shouldParry = true
-    elseif imTarget and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > cooldown then
-        shouldParry = true
-    end
-
-    if shouldParry then
+    -- Sou alvo + bola aproximando + ETA dentro do threshold
+    -- Cooldown respeita animacao do jogo (1.5s) pra nao desperdicar cliques
+    if imTarget and approaching and eta <= threshold and not alreadyParried and timeSinceParry > PARRY_ANIM_CD then
         lastParryTime = now
         alreadyParried = true
 
-        local mode = inClash and "CLASH" or "NORMAL"
-        log("!!! PARRY " .. mode .. " !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist) .. " Tgt:" .. targetName, RED)
+        log("!!! PARRY !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist) .. " Spd:" .. string.format("%.0f", ballSpeed) .. " Tgt:" .. targetName, RED)
 
         local results = doParry()
         for _, r in pairs(results) do
