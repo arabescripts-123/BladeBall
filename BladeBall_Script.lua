@@ -259,6 +259,7 @@ local PING_EXTRA = 0.05 -- margem extra de seguranca
 local lastParryTime = 0
 local alreadyParried = false
 local prevDist = math.huge
+local lastFrameTime = tick()
 
 -- Cache dos remotes do Blade Ball
 local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
@@ -373,39 +374,35 @@ RunService.Heartbeat:Connect(function()
     end
     prevDist = dist
 
-    -- Velocidade real da bola (AssemblyLinearVelocity e mais preciso)
-    local vel = ball:GetPropertyChangedSignal("AssemblyLinearVelocity") and ball.AssemblyLinearVelocity or ball.Velocity
-    local ballSpeed = vel.Magnitude
-
-    -- Verifica se a bola esta vindo na minha direcao (dot product)
-    local dirToBall = (root.Position - ball.Position)
-    local dotProduct = dirToBall.Unit:Dot(vel.Unit)
-    local comingAtMe = dotProduct > 0.3 -- bola apontando pra mim
+    -- Calcula velocidade manualmente pela mudanca de distancia por frame
+    local now = tick()
+    local dt = now - (lastFrameTime or now)
+    lastFrameTime = now
+    
+    local ballSpeed = 0
+    if dt > 0 and approaching then
+        ballSpeed = (prevDist - dist) / dt -- studs por segundo baseado na aproximacao real
+    end
+    if ballSpeed < 1 then ballSpeed = 1 end
 
     local imTarget = amITarget(ball)
     local ping = getPing()
 
-    -- ETA = distancia / velocidade
-    local eta = ballSpeed > 1 and (dist / ballSpeed) or 999
+    -- ETA = distancia / velocidade_calculada
+    local eta = dist / ballSpeed
 
-    -- Threshold: preciso clicar ANIMATION_DELAY + ping antes do impacto
-    -- Se eta <= threshold, hora de clicar
+    -- Threshold: clicar ANIMATION_DELAY + ping antes do impacto
     local threshold = ANIMATION_DELAY + ping + PING_EXTRA
 
     parryInfoLabel.Text = string.format("D:%.0f S:%.0f T:%.2f P:%dms %s",
-        dist, ballSpeed, eta, ping * 1000, imTarget and "[ALVO]" or (comingAtMe and "[VINDO]" or ""))
+        dist, ballSpeed, eta, ping * 1000, imTarget and "[ALVO]" or (approaching and "[>>]" or ""))
 
-    local now = tick()
-
-    -- Condicoes para parry:
-    -- 1. Sou o alvo OU bola vem na minha direcao (dot product)
-    -- 2. Bola se aproximando
-    -- 3. ETA <= threshold (hora de clicar considerando delay + ping)
-    -- 4. Nao ja parried neste ciclo
-    -- 5. Cooldown minimo de 0.3s entre parrys
-    if (imTarget or comingAtMe) and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.3 then
+    -- Condicao: bola se aproximando + ETA dentro do threshold
+    -- Nao depende de Target nem velocity — so distancia diminuindo
+    if approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.3 then
         lastParryTime = now
         alreadyParried = true
+        parryInfoLabel.Text = ">>> PARRY! <<<"
         doParry()
     end
 end)
