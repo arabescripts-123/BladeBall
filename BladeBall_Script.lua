@@ -1,623 +1,372 @@
--- Blade Ball Script
+-- BladeBall Diagnostico Completo
+-- Roda isso SEPARADO do script principal pra ver tudo que acontece
 -- By @leo.zppln
-print("[BladeBall] Iniciando...")
 
 local player = game:GetService("Players").LocalPlayer
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-
-repeat task.wait() until player.Character or player.CharacterAdded:Wait()
-task.wait(0.5)
-
-local guiParent = gethui and gethui() or game:GetService("CoreGui")
-if not guiParent then guiParent = player:WaitForChild("PlayerGui") end
-
-pcall(function()
-    local existing = guiParent:FindFirstChild("BladeBallGui")
-    if existing then existing:Destroy() end
-    -- Mata GameAnalyzer se estiver aberto pra nao conflitar
-    local ga = guiParent:FindFirstChild("GameAnalyzerGui")
-    if ga then ga:Destroy() end
-end)
-task.wait(0.3)
-
--- ============ GUI ============
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "BladeBallGui"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(18, 12, 12)
-MainFrame.Position = UDim2.new(0.02, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 240, 0, 380)
-MainFrame.BackgroundTransparency = 0.05
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Parent = MainFrame
-mainStroke.Color = Color3.fromRGB(180, 40, 40)
-mainStroke.Thickness = 1.5
-mainStroke.Transparency = 0.3
-
--- Title Bar
-local TitleBar = Instance.new("Frame")
-TitleBar.Parent = MainFrame
-TitleBar.BackgroundColor3 = Color3.fromRGB(30, 15, 15)
-TitleBar.Size = UDim2.new(1, 0, 0, 42)
-TitleBar.BorderSizePixel = 0
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 12)
-
-local TitleBarFix = Instance.new("Frame")
-TitleBarFix.Parent = TitleBar
-TitleBarFix.BackgroundColor3 = Color3.fromRGB(30, 15, 15)
-TitleBarFix.Size = UDim2.new(1, 0, 0, 14)
-TitleBarFix.Position = UDim2.new(0, 0, 1, -14)
-TitleBarFix.BorderSizePixel = 0
-
-local Title = Instance.new("TextLabel")
-Title.Parent = TitleBar
-Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(1, -45, 1, 0)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "🔴 BladeBall"
-Title.TextColor3 = Color3.fromRGB(255, 120, 120)
-Title.TextSize = 16
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Position = UDim2.new(0, 12, 0, 0)
-Title.Active = true
-
--- Rejoin
-local rejoinBtn = Instance.new("TextButton")
-rejoinBtn.Parent = TitleBar
-rejoinBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-rejoinBtn.Position = UDim2.new(1, -36, 0, 6)
-rejoinBtn.Size = UDim2.new(0, 30, 0, 30)
-rejoinBtn.Font = Enum.Font.GothamBold
-rejoinBtn.Text = "R"
-rejoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-rejoinBtn.TextSize = 13
-Instance.new("UICorner", rejoinBtn).CornerRadius = UDim.new(0, 8)
-
--- Credit
-local creditLabel = Instance.new("TextLabel")
-creditLabel.Parent = MainFrame
-creditLabel.BackgroundTransparency = 1
-creditLabel.Position = UDim2.new(0, 0, 1, -18)
-creditLabel.Size = UDim2.new(1, 0, 0, 18)
-creditLabel.Font = Enum.Font.GothamSemibold
-creditLabel.Text = "By @leo.zppln"
-creditLabel.TextColor3 = Color3.fromRGB(180, 80, 80)
-creditLabel.TextSize = 13
-creditLabel.TextTransparency = 0.2
-
--- Dragging
-local dragging, dragInput, dragStart, startPos
-
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
-    end
-end)
-TitleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-end)
-UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- ============ BUTTON FACTORY ============
-local function createButton(text, position)
-    local btn = Instance.new("TextButton")
-    btn.Parent = MainFrame
-    btn.BackgroundColor3 = Color3.fromRGB(35, 18, 18)
-    btn.Position = position
-    btn.Size = UDim2.new(0, 145, 0, 32)
-    btn.Font = Enum.Font.GothamSemibold
-    btn.Text = "  " .. text
-    btn.TextColor3 = Color3.fromRGB(220, 200, 200)
-    btn.TextSize = 12
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.AutoButtonColor = false
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Parent = btn
-    stroke.Color = Color3.fromRGB(70, 35, 35)
-    stroke.Thickness = 1
-    stroke.Transparency = 0.5
-
-    local indicator = Instance.new("Frame")
-    indicator.Parent = btn
-    indicator.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-    indicator.Position = UDim2.new(1, -24, 0.5, -6)
-    indicator.Size = UDim2.new(0, 12, 0, 12)
-    indicator.BorderSizePixel = 0
-    Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
-
-    local iStroke = Instance.new("UIStroke")
-    iStroke.Parent = indicator
-    iStroke.Color = Color3.fromRGB(255, 255, 255)
-    iStroke.Thickness = 1
-    iStroke.Transparency = 0.7
-
-    return btn, indicator
-end
-
-local function createKeyBox(text, position)
-    local box = Instance.new("TextBox")
-    box.Parent = MainFrame
-    box.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
-    box.Position = position
-    box.Size = UDim2.new(0, 38, 0, 32)
-    box.Font = Enum.Font.GothamBold
-    box.Text = text
-    box.TextColor3 = Color3.fromRGB(255, 140, 140)
-    box.TextSize = 11
-    box.ClearTextOnFocus = false
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
-    local s = Instance.new("UIStroke")
-    s.Parent = box
-    s.Color = Color3.fromRGB(100, 40, 40)
-    s.Thickness = 1
-    s.Transparency = 0.5
-    return box
-end
-
--- ============ SEPARADORES ============
-local function createSeparator(yPos)
-    local sep = Instance.new("Frame")
-    sep.Parent = MainFrame
-    sep.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-    sep.Position = UDim2.new(0, 15, 0, yPos)
-    sep.Size = UDim2.new(0, 210, 0, 1)
-    sep.BorderSizePixel = 0
-    sep.BackgroundTransparency = 0.6
-    return sep
-end
-
--- ============ SECTION LABELS ============
-local function createSectionLabel(text, yPos)
-    local label = Instance.new("TextLabel")
-    label.Parent = MainFrame
-    label.BackgroundTransparency = 1
-    label.Position = UDim2.new(0, 12, 0, yPos)
-    label.Size = UDim2.new(0, 200, 0, 18)
-    label.Font = Enum.Font.GothamBold
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(255, 100, 100)
-    label.TextSize = 11
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    return label
-end
-
--- ============ BOTOES ============
-createSectionLabel("⚔ COMBATE", 48)
-
-local autoParryBtn, autoParryInd = createButton("Auto Parry", UDim2.new(0, 12, 0, 68))
-local parryKeyBox = createKeyBox("P", UDim2.new(0, 162, 0, 68))
-
--- Info label do auto parry
-local parryInfoLabel = Instance.new("TextLabel")
-parryInfoLabel.Parent = MainFrame
-parryInfoLabel.BackgroundTransparency = 1
-parryInfoLabel.Position = UDim2.new(0, 14, 0, 104)
-parryInfoLabel.Size = UDim2.new(0, 212, 0, 14)
-parryInfoLabel.Font = Enum.Font.GothamSemibold
-parryInfoLabel.Text = "Auto | Vel:0 Dist:0"
-parryInfoLabel.TextColor3 = Color3.fromRGB(200, 160, 160)
-parryInfoLabel.TextSize = 10
-parryInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-createSeparator(124)
-createSectionLabel("🎯 MOVIMENTO", 129)
-
-local clickTpBtn, clickTpInd = createButton("Click TP", UDim2.new(0, 12, 0, 149))
-local tpKeyBox = createKeyBox("Q", UDim2.new(0, 162, 0, 149))
-
-local espBtn, espInd = createButton("ESP Players", UDim2.new(0, 12, 0, 189))
-local espKeyBox = createKeyBox("J", UDim2.new(0, 162, 0, 189))
-
-createSeparator(229)
-createSectionLabel("🛡 UTILIDADES", 234)
-
-local speedBtn, speedInd = createButton("Speed", UDim2.new(0, 12, 0, 254))
-local speedBox = createKeyBox("50", UDim2.new(0, 162, 0, 254))
-
-local flyBtn, flyInd = createButton("Fly", UDim2.new(0, 12, 0, 294))
-local flyKeyBox = createKeyBox("F", UDim2.new(0, 162, 0, 294))
-
--- ============ VARIAVEIS ============
-local autoParryEnabled = false
-local clickTpEnabled = false
-local espEnabled = false
-local speedEnabled = false
-local walkSpeed = 50
-local flying = false
-local flySpeed = 65
-local bodyVelocity, bodyGyro = nil, nil
-
-local parryKey = Enum.KeyCode.P
-local tpKey = Enum.KeyCode.Q
-local espKey = Enum.KeyCode.J
-local flyKey = Enum.KeyCode.F
-local toggleKey = Enum.KeyCode.X
-
--- ============ AUTO PARRY ============
-local SAFETY_OFFSET = 0.05
-local lastParryTime = 0
-local alreadyParried = false
-local prevDist = math.huge
-local prevBallPos = nil
-local prevTime = tick()
-local manualSpeed = 0 -- velocidade calculada manualmente como fallback
-
-local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
-local parryButtonPress = Remotes and Remotes:FindFirstChild("ParryButtonPress")
-local parryAttempt = Remotes and Remotes:FindFirstChild("ParryAttempt")
 local Stats = game:GetService("Stats")
 
-local function getPing()
-    local ok, p = pcall(function() return player:GetNetworkPing() end)
-    if ok and p and p > 0 then return p end
+repeat task.wait() until player.Character
+task.wait(1)
+
+local guiParent = gethui and gethui() or game:GetService("CoreGui")
+pcall(function()
+    local old = guiParent:FindFirstChild("DiagGui")
+    if old then old:Destroy() end
+end)
+
+-- ============ GUI DE LOG ============
+local sg = Instance.new("ScreenGui")
+sg.Name = "DiagGui"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local frame = Instance.new("Frame")
+frame.Parent = sg
+frame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+frame.BackgroundTransparency = 0.1
+frame.Position = UDim2.new(0.5, -250, 0, 10)
+frame.Size = UDim2.new(0, 500, 0, 400)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Parent = frame
+title.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Font = Enum.Font.GothamBold
+title.Text = "BLADE BALL - DIAGNOSTICO"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextSize = 14
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 10)
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Parent = frame
+scroll.BackgroundTransparency = 1
+scroll.Position = UDim2.new(0, 5, 0, 35)
+scroll.Size = UDim2.new(1, -10, 1, -40)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollBarThickness = 6
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local layout = Instance.new("UIListLayout")
+layout.Parent = scroll
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 2)
+
+pcall(function() sg.Parent = guiParent end)
+if not sg.Parent then sg.Parent = player:WaitForChild("PlayerGui") end
+
+local logOrder = 0
+local MAX_LOGS = 80
+
+local function log(text, color)
+    logOrder = logOrder + 1
+    local l = Instance.new("TextLabel")
+    l.Parent = scroll
+    l.BackgroundTransparency = 1
+    l.Size = UDim2.new(1, 0, 0, 16)
+    l.Font = Enum.Font.RobotoMono
+    l.Text = string.format("[%.1f] %s", tick() % 1000, text)
+    l.TextColor3 = color or Color3.new(1, 1, 1)
+    l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.LayoutOrder = logOrder
+    l.TextWrapped = true
+    l.AutomaticSize = Enum.AutomaticSize.Y
+
+    -- Limpa logs antigos
+    local children = scroll:GetChildren()
+    local labels = {}
+    for _, c in pairs(children) do
+        if c:IsA("TextLabel") then table.insert(labels, c) end
+    end
+    if #labels > MAX_LOGS then
+        table.sort(labels, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+        for i = 1, #labels - MAX_LOGS do
+            labels[i]:Destroy()
+        end
+    end
+
+    scroll.CanvasPosition = Vector2.new(0, scroll.AbsoluteCanvasSize.Y)
+end
+
+local WHITE = Color3.new(1, 1, 1)
+local GREEN = Color3.fromRGB(80, 255, 80)
+local RED = Color3.fromRGB(255, 80, 80)
+local YELLOW = Color3.fromRGB(255, 255, 80)
+local CYAN = Color3.fromRGB(80, 220, 255)
+local ORANGE = Color3.fromRGB(255, 160, 50)
+
+-- ============ TESTE 1: PING ============
+log("=== TESTE DE PING ===", CYAN)
+local function testPing()
+    local ok1, p1 = pcall(function() return player:GetNetworkPing() end)
+    log("GetNetworkPing(): " .. (ok1 and tostring(p1) or "FALHOU: nao existe"), ok1 and GREEN or RED)
+
     local ok2, p2 = pcall(function()
-        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
     end)
-    return (ok2 and p2 and p2 > 0) and p2 or 0.08
+    log("Stats DataPing: " .. (ok2 and (p2 .. "ms") or "FALHOU"), ok2 and GREEN or RED)
 end
+testPing()
 
-local function findBall()
-    local folder = workspace:FindFirstChild("Balls")
-    if not folder then return nil end
-    for _, b in pairs(folder:GetChildren()) do
-        if b:IsA("BasePart") then return b end
-        local p = b:FindFirstChildWhichIsA("BasePart")
-        if p then return p end
+-- ============ TESTE 2: REMOTES ============
+log("", WHITE)
+log("=== TESTE DE REMOTES ===", CYAN)
+
+local Remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+log("ReplicatedStorage.Remotes existe: " .. tostring(Remotes ~= nil), Remotes and GREEN or RED)
+
+if Remotes then
+    log("Filhos de Remotes:", YELLOW)
+    for _, child in pairs(Remotes:GetChildren()) do
+        log("  " .. child.ClassName .. ": " .. child.Name, WHITE)
     end
-    return nil
+
+    local pBP = Remotes:FindFirstChild("ParryButtonPress")
+    local pA = Remotes:FindFirstChild("ParryAttempt")
+    log("ParryButtonPress: " .. (pBP and pBP.ClassName or "NAO ENCONTRADO"), pBP and GREEN or RED)
+    log("ParryAttempt: " .. (pA and pA.ClassName or "NAO ENCONTRADO"), pA and GREEN or RED)
+else
+    log("Buscando remotes em todo ReplicatedStorage...", YELLOW)
+    for _, child in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+        if child.Name:lower():find("parry") then
+            log("  ENCONTRADO: " .. child:GetFullName() .. " (" .. child.ClassName .. ")", GREEN)
+        end
+    end
 end
 
-local function getBallSpeed(ball)
-    -- Tenta AssemblyLinearVelocity primeiro
-    local ok, vel = pcall(function() return ball.AssemblyLinearVelocity end)
-    if ok and vel and vel.Magnitude > 5 then return vel.Magnitude end
-    -- Tenta Velocity
-    local ok2, vel2 = pcall(function() return ball.Velocity end)
-    if ok2 and vel2 and vel2.Magnitude > 5 then return vel2.Magnitude end
-    -- Fallback: velocidade manual calculada por posicao
-    return manualSpeed > 5 and manualSpeed or 100
+-- ============ TESTE 3: WORKSPACE BALLS ============
+log("", WHITE)
+log("=== TESTE DE BOLA ===", CYAN)
+
+local ballsFolder = workspace:FindFirstChild("Balls")
+log("workspace.Balls existe: " .. tostring(ballsFolder ~= nil), ballsFolder and GREEN or RED)
+
+if not ballsFolder then
+    log("Buscando 'Ball' em todo workspace...", YELLOW)
+    for _, child in pairs(workspace:GetDescendants()) do
+        if child.Name:lower():find("ball") and child:IsA("BasePart") then
+            log("  ENCONTRADO: " .. child:GetFullName(), GREEN)
+        end
+    end
 end
 
-local function doParry()
-    pcall(function()
-        if parryButtonPress and parryButtonPress:IsA("BindableEvent") then
-            parryButtonPress:Fire()
+-- ============ TESTE 4: WORKSPACE ALIVE ============
+log("", WHITE)
+log("=== TESTE DE ALIVE/TARGET ===", CYAN)
+
+local alive = workspace:FindFirstChild("Alive")
+log("workspace.Alive existe: " .. tostring(alive ~= nil), alive and GREEN or RED)
+
+if alive then
+    log("Jogadores em Alive: " .. #alive:GetChildren(), YELLOW)
+    for _, plrModel in pairs(alive:GetChildren()) do
+        local tc = plrModel:FindFirstChild("TargetCharacter")
+        if tc then
+            log("  " .. plrModel.Name .. " -> TargetCharacter: " .. tostring(tc.Value), WHITE)
+        end
+    end
+end
+
+-- ============ TESTE 5: MONITORAMENTO EM TEMPO REAL ============
+log("", WHITE)
+log("=== MONITORAMENTO EM TEMPO REAL ===", CYAN)
+log("Esperando bola aparecer...", YELLOW)
+
+local prevBallPos = nil
+local prevDist = math.huge
+local prevTime = tick()
+local frameCount = 0
+local lastLogTime = 0
+
+-- Monitora bola aparecendo/sumindo
+if ballsFolder then
+    ballsFolder.ChildAdded:Connect(function(child)
+        log("BOLA ADICIONADA: " .. child.Name .. " (" .. child.ClassName .. ")", GREEN)
+        -- Analisa propriedades da bola
+        task.wait(0.1)
+        local part = child:IsA("BasePart") and child or child:FindFirstChildWhichIsA("BasePart")
+        if part then
+            log("  Position: " .. tostring(part.Position), WHITE)
+            log("  Velocity: " .. tostring(part.Velocity) .. " Mag:" .. string.format("%.1f", part.Velocity.Magnitude), WHITE)
+            local ok, alv = pcall(function() return part.AssemblyLinearVelocity end)
+            log("  AssemblyLinearVelocity: " .. (ok and (tostring(alv) .. " Mag:" .. string.format("%.1f", alv.Magnitude)) or "FALHOU"), ok and WHITE or RED)
+            log("  Anchored: " .. tostring(part.Anchored), part.Anchored and RED or GREEN)
+
+            -- Checa filhos da bola
+            log("  Filhos da bola:", YELLOW)
+            for _, c in pairs(child:GetDescendants()) do
+                log("    " .. c.ClassName .. ": " .. c.Name, WHITE)
+            end
+
+            -- Checa atributos
+            local attrs = part:GetAttributes()
+            if next(attrs) then
+                log("  Atributos:", YELLOW)
+                for k, v in pairs(attrs) do
+                    log("    " .. k .. " = " .. tostring(v), WHITE)
+                end
+            else
+                log("  Sem atributos", ORANGE)
+            end
         end
     end)
-    pcall(function()
-        if parryAttempt and parryAttempt:IsA("RemoteEvent") then
-            parryAttempt:FireServer()
-        end
-    end)
-    pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        task.defer(function()
-            vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        end)
+
+    ballsFolder.ChildRemoved:Connect(function(child)
+        log("BOLA REMOVIDA: " .. child.Name, RED)
     end)
 end
 
--- Usa RenderStepped (roda antes do frame, mais rapido que Heartbeat)
+-- Loop principal de monitoramento
 RunService.RenderStepped:Connect(function()
-    if not autoParryEnabled then
-        parryInfoLabel.Text = "Auto Parry: OFF"
-        return
-    end
+    frameCount = frameCount + 1
+    local now = tick()
+
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    local ball = findBall()
+    -- Encontra bola
+    local ball = nil
+    if ballsFolder then
+        for _, b in pairs(ballsFolder:GetChildren()) do
+            if b:IsA("BasePart") then ball = b break end
+            local p = b:FindFirstChildWhichIsA("BasePart")
+            if p then ball = p break end
+        end
+    end
+
     if not ball then
-        prevDist = math.huge
-        prevBallPos = nil
-        alreadyParried = false
-        parryInfoLabel.Text = "Sem bola"
+        if prevBallPos ~= nil then
+            log("Bola sumiu do folder", RED)
+            prevBallPos = nil
+            prevDist = math.huge
+        end
         return
     end
 
-    local now = tick()
     local dt = now - prevTime
     prevTime = now
 
-    local ballPos = ball.Position
-    local rootPos = root.Position
-    local dist = (ballPos - rootPos).Magnitude
+    local dist = (ball.Position - root.Position).Magnitude
+    local approaching = dist < (prevDist - 0.3)
 
-    -- Calcula velocidade manual pela mudanca de posicao da bola
+    -- Velocidade da bola (3 metodos)
+    local velMag = ball.Velocity.Magnitude
+    local ok, alvMag = pcall(function() return ball.AssemblyLinearVelocity.Magnitude end)
+    alvMag = ok and alvMag or 0
+
+    local manualSpeed = 0
     if prevBallPos and dt > 0 then
-        manualSpeed = (ballPos - prevBallPos).Magnitude / dt
+        manualSpeed = (ball.Position - prevBallPos).Magnitude / dt
     end
-    prevBallPos = ballPos
+    prevBallPos = ball.Position
 
-    local approaching = dist < (prevDist - 0.5) -- margem pra evitar flutuacao
-    if not approaching then
-        alreadyParried = false
+    -- Checa target
+    local isTarget = false
+    local targetInfo = "?"
+
+    -- Metodo 1: atributo na bola
+    pcall(function()
+        local t = ball:GetAttribute("Target")
+        if t then
+            targetInfo = "Attr:" .. tostring(t)
+            if t == player.Name then isTarget = true end
+        end
+    end)
+
+    -- Metodo 2: ObjectValue na bola ou parent
+    if not isTarget then
+        local tv = ball:FindFirstChild("Target") or (ball.Parent and ball.Parent:FindFirstChild("Target"))
+        if tv then
+            if tv:IsA("ObjectValue") and tv.Value then
+                targetInfo = "ObjVal:" .. tv.Value.Name
+                if tv.Value == char or tv.Value == player then isTarget = true end
+            elseif tv:IsA("StringValue") then
+                targetInfo = "StrVal:" .. tv.Value
+                if tv.Value == player.Name then isTarget = true end
+            end
+        end
     end
+
+    -- Metodo 3: TargetCharacter em Alive
+    if not isTarget and alive then
+        for _, plrModel in pairs(alive:GetChildren()) do
+            local tc = plrModel:FindFirstChild("TargetCharacter")
+            if tc and tc:IsA("ObjectValue") and tc.Value == char then
+                isTarget = true
+                targetInfo = "Alive:" .. plrModel.Name .. "->eu"
+                break
+            end
+        end
+    end
+
     prevDist = dist
 
-    local ballSpeed = getBallSpeed(ball)
-    local ping = getPing()
+    -- Loga a cada 0.5s quando bola existe
+    if now - lastLogTime >= 0.5 then
+        lastLogTime = now
 
-    -- ETA: tempo ate a bola chegar no jogador
-    local eta = dist / ballSpeed
+        local bestSpeed = math.max(velMag, alvMag, manualSpeed)
+        local eta = bestSpeed > 1 and (dist / bestSpeed) or 999
 
-    -- Threshold: ping + margem de seguranca
-    -- Sem animation delay aqui — o click JA dispara o parry, o delay visual nao importa pro servidor
-    local threshold = ping + SAFETY_OFFSET
+        local color = approaching and YELLOW or WHITE
+        if isTarget and approaching then color = RED end
 
-    -- Se a bola ta MUITO rapida (eta < ping), threshold minimo de 0.15s
-    if threshold < 0.15 then threshold = 0.15 end
-
-    parryInfoLabel.Text = string.format("D:%.0f V:%.0f ETA:%.3f P:%dms %s",
-        dist, ballSpeed, eta, ping * 1000, approaching and "[>>]" or "")
-
-    -- Dispara parry quando ETA <= threshold E bola se aproximando
-    if approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
-        lastParryTime = now
-        alreadyParried = true
-        parryInfoLabel.Text = string.format(">>> PARRY! <<< ETA:%.3f", eta)
-        doParry()
+        log(string.format("D:%.0f Vel:%.0f ALV:%.0f Man:%.0f ETA:%.2f %s %s %s",
+            dist, velMag, alvMag, manualSpeed, eta,
+            approaching and "APROX" or "afast",
+            isTarget and "EU_ALVO" or "nao_alvo",
+            "Tgt:" .. targetInfo
+        ), color)
     end
 end)
 
--- ============ CLICK TP (MOUSE) ============
-local mouse = player:GetMouse()
+-- ============ TESTE 6: TESTA PARRY MANUAL ============
+log("", WHITE)
+log("=== APERTE 'T' PRA TESTAR PARRY MANUAL ===", ORANGE)
 
-local function doClickTp()
-    if not player.Character then return end
-    local root = player.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    if mouse.Target then
-        root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
-    end
-end
-
--- ============ ESP ============
-local espBoxes = {}
-local espConnections = {}
-
-local function addESP(plr)
-    if plr == player or not espEnabled then return end
-    local function createHighlight(char)
-        if not espEnabled or not char:FindFirstChild("Head") then return end
-        pcall(function()
-            for _, obj in pairs(char:GetChildren()) do
-                if obj:IsA("Highlight") then obj:Destroy() end
-            end
-            local hl = Instance.new("Highlight")
-            hl.FillColor = Color3.fromRGB(200, 40, 40)
-            hl.OutlineColor = Color3.fromRGB(255, 80, 80)
-            hl.FillTransparency = 0.8
-            hl.OutlineTransparency = 0.4
-            hl.Adornee = char
-            hl.Parent = char
-
-            local bb = Instance.new("BillboardGui")
-            bb.Adornee = char:FindFirstChild("Head")
-            bb.Size = UDim2.new(0, 100, 0, 30)
-            bb.StudsOffset = Vector3.new(0, 3, 0)
-            bb.AlwaysOnTop = true
-            bb.Parent = char:FindFirstChild("Head")
-
-            local nl = Instance.new("TextLabel")
-            nl.Size = UDim2.new(1, 0, 1, 0)
-            nl.BackgroundTransparency = 1
-            nl.Text = plr.Name
-            nl.TextColor3 = Color3.fromRGB(255, 100, 100)
-            nl.TextStrokeTransparency = 0.3
-            nl.Font = Enum.Font.GothamBold
-            nl.TextSize = 14
-            nl.Parent = bb
-
-            if not espBoxes[plr] then espBoxes[plr] = {} end
-            table.insert(espBoxes[plr], hl)
-            table.insert(espBoxes[plr], bb)
-        end)
-    end
-    if plr.Character then createHighlight(plr.Character) end
-    espConnections[plr] = plr.CharacterAdded:Connect(function(char)
-        if espEnabled then task.wait(0.3); createHighlight(char) end
-    end)
-end
-
-local function removeESP(plr)
-    if espBoxes[plr] then
-        for _, v in pairs(espBoxes[plr]) do pcall(function() v:Destroy() end) end
-        espBoxes[plr] = nil
-    end
-    if espConnections[plr] then espConnections[plr]:Disconnect(); espConnections[plr] = nil end
-end
-
-local function enableESP()
-    for _, plr in pairs(game.Players:GetPlayers()) do addESP(plr) end
-    espConnections._added = game.Players.PlayerAdded:Connect(function(plr)
-        if espEnabled then task.wait(0.5); addESP(plr) end
-    end)
-    espConnections._removing = game.Players.PlayerRemoving:Connect(function(plr) removeESP(plr) end)
-end
-
-local function disableESP()
-    for plr in pairs(espBoxes) do removeESP(plr) end
-    if espConnections._added then espConnections._added:Disconnect(); espConnections._added = nil end
-    if espConnections._removing then espConnections._removing:Disconnect(); espConnections._removing = nil end
-end
-
--- ============ SPEED ============
-local function updateSpeed()
-    pcall(function()
-        if player.Character then
-            local h = player.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.WalkSpeed = speedEnabled and walkSpeed or 16 end
-        end
-    end)
-end
-
--- ============ FLY ============
-local function startFly()
-    flying = true
-    pcall(function()
-        local root = player.Character:FindFirstChild("HumanoidRootPart")
-        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-        if not root or not humanoid then return end
-        humanoid.PlatformStand = true
-        bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Velocity = Vector3.zero
-        bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        bodyVelocity.Parent = root
-        bodyGyro = Instance.new("BodyGyro")
-        bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-        bodyGyro.CFrame = root.CFrame
-        bodyGyro.Parent = root
-    end)
-end
-
-local function stopFly()
-    flying = false
-    pcall(function()
-        if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
-        if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
-        if player.Character then
-            local h = player.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.PlatformStand = false end
-        end
-    end)
-end
-
-RunService.Heartbeat:Connect(function()
-    if not flying or not player.Character then return end
-    pcall(function()
-        local root = player.Character:FindFirstChild("HumanoidRootPart")
-        if not root or not bodyVelocity then return end
-        local cam = workspace.CurrentCamera
-        local dir = Vector3.zero
-        if UIS:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.yAxis end
-        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.yAxis end
-        bodyVelocity.Velocity = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.zero
-        if bodyGyro then bodyGyro.CFrame = cam.CFrame end
-    end)
-end)
-
-
-
--- ============ BUTTON CLICKS ============
-autoParryBtn.MouseButton1Click:Connect(function()
-    autoParryEnabled = not autoParryEnabled
-    autoParryInd.BackgroundColor3 = autoParryEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-end)
-
-clickTpBtn.MouseButton1Click:Connect(function()
-    clickTpEnabled = not clickTpEnabled
-    clickTpInd.BackgroundColor3 = clickTpEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-end)
-
-espBtn.MouseButton1Click:Connect(function()
-    espEnabled = not espEnabled
-    if espEnabled then enableESP() else disableESP() end
-    espInd.BackgroundColor3 = espEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-end)
-
-speedBtn.MouseButton1Click:Connect(function()
-    speedEnabled = not speedEnabled
-    updateSpeed()
-    speedInd.BackgroundColor3 = speedEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-end)
-
-flyBtn.MouseButton1Click:Connect(function()
-    if flying then stopFly() else startFly() end
-    flyInd.BackgroundColor3 = flying and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-end)
-
-rejoinBtn.MouseButton1Click:Connect(function()
-    game:GetService("TeleportService"):Teleport(game.PlaceId, player)
-end)
-
--- ============ KEY BOXES ============
-speedBox.FocusLost:Connect(function()
-    local v = tonumber(speedBox.Text)
-    if v and v >= 1 and v <= 500 then walkSpeed = v else walkSpeed = 50; speedBox.Text = "50" end
-    updateSpeed()
-end)
-
-parryKeyBox.FocusLost:Connect(function()
-    local t = parryKeyBox.Text:upper()
-    local ok, k = pcall(function() return Enum.KeyCode[t] end)
-    if ok and k then parryKey = k; parryKeyBox.Text = t else parryKeyBox.Text = "P"; parryKey = Enum.KeyCode.P end
-end)
-
-tpKeyBox.FocusLost:Connect(function()
-    local t = tpKeyBox.Text:upper()
-    local ok, k = pcall(function() return Enum.KeyCode[t] end)
-    if ok and k then tpKey = k; tpKeyBox.Text = t else tpKeyBox.Text = "Q"; tpKey = Enum.KeyCode.Q end
-end)
-
-espKeyBox.FocusLost:Connect(function()
-    local t = espKeyBox.Text:upper()
-    local ok, k = pcall(function() return Enum.KeyCode[t] end)
-    if ok and k then espKey = k; espKeyBox.Text = t else espKeyBox.Text = "J"; espKey = Enum.KeyCode.J end
-end)
-
-flyKeyBox.FocusLost:Connect(function()
-    local t = flyKeyBox.Text:upper()
-    local ok, k = pcall(function() return Enum.KeyCode[t] end)
-    if ok and k then flyKey = k; flyKeyBox.Text = t else flyKeyBox.Text = "F"; flyKey = Enum.KeyCode.F end
-end)
-
--- ============ KEYBINDS ============
+local UIS = game:GetService("UserInputService")
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == toggleKey then
-        MainFrame.Visible = not MainFrame.Visible
-    elseif input.KeyCode == parryKey then
-        autoParryEnabled = not autoParryEnabled
-        autoParryInd.BackgroundColor3 = autoParryEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-    elseif input.KeyCode == tpKey and clickTpEnabled then
-        pcall(doClickTp)
-    elseif input.KeyCode == espKey then
-        espEnabled = not espEnabled
-        if espEnabled then enableESP() else disableESP() end
-        espInd.BackgroundColor3 = espEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
-    elseif input.KeyCode == flyKey then
-        if flying then stopFly() else startFly() end
-        flyInd.BackgroundColor3 = flying and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
+    if input.KeyCode == Enum.KeyCode.T then
+        log("--- TESTANDO PARRY ---", RED)
+
+        -- Metodo 1
+        local pBP = Remotes and Remotes:FindFirstChild("ParryButtonPress")
+        if pBP then
+            local ok, err = pcall(function() pBP:Fire() end)
+            log("ParryButtonPress:Fire() -> " .. (ok and "OK" or ("ERRO: " .. tostring(err))), ok and GREEN or RED)
+        else
+            log("ParryButtonPress NAO ENCONTRADO", RED)
+        end
+
+        -- Metodo 2
+        local pA = Remotes and Remotes:FindFirstChild("ParryAttempt")
+        if pA then
+            local ok, err = pcall(function() pA:FireServer() end)
+            log("ParryAttempt:FireServer() -> " .. (ok and "OK" or ("ERRO: " .. tostring(err))), ok and GREEN or RED)
+        else
+            log("ParryAttempt NAO ENCONTRADO", RED)
+        end
+
+        -- Metodo 3
+        local ok3, err3 = pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.defer(function()
+                vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            end)
+        end)
+        log("VirtualInputManager click -> " .. (ok3 and "OK" or ("ERRO: " .. tostring(err3))), ok3 and GREEN or RED)
+
+        log("--- FIM TESTE PARRY ---", RED)
     end
 end)
 
--- ============ RESPAWN ============
-player.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    if speedEnabled then updateSpeed() end
-    if flying then startFly() end
-end)
-
--- ============ PARENT GUI ============
-pcall(function() ScreenGui.Parent = guiParent end)
-if not ScreenGui.Parent then ScreenGui.Parent = player:WaitForChild("PlayerGui") end
-
-print("[BladeBall] Carregado! X=Menu | P=AutoParry | Q=TP | J=ESP | F=Fly")
+log("", WHITE)
+log("Diagnostico pronto! Jogue normalmente.", GREEN)
+log("Aperte T pra testar se o parry funciona.", ORANGE)
+log("Os logs vao mostrar tudo em tempo real.", GREEN)
