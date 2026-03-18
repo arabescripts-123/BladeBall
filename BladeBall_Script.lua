@@ -351,13 +351,25 @@ RunService.Heartbeat:Connect(function()
     local ball = findBall()
     if not ball then return end
 
-    local dist = (ball.Position - root.Position).Magnitude
+    local offset = ball.Position - root.Position
+    local dist = offset.Magnitude
     local now = tick()
 
-    if dist <= parryDistance and (now - lastParryTime) > 0.35 then
-        lastParryTime = now
-        doParry()
-    end
+    if dist > parryDistance then return end
+    if (now - lastParryTime) < 0.5 then return end
+
+    -- Checa se a bola esta vindo na minha direcao
+    local ballVel = ball.Velocity
+    if ballVel.Magnitude < 1 then return end
+
+    local dirToMe = offset.Unit
+    local ballDir = ballVel.Unit
+    -- Dot negativo = bola vindo na minha direcao
+    local dot = ballDir:Dot(dirToMe)
+    if dot > -0.3 then return end
+
+    lastParryTime = now
+    doParry()
 end)
 
 -- ============ CLICK TP (MOUSE) ============
