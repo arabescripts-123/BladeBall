@@ -341,6 +341,11 @@ local function doParry()
     end)
 end
 
+-- Tracking: a bola esta me perseguindo?
+local prevDist = math.huge
+local approachCount = 0
+local alreadyParried = false
+
 RunService.Heartbeat:Connect(function()
     if not autoParryEnabled then return end
     local char = player.Character
@@ -349,27 +354,32 @@ RunService.Heartbeat:Connect(function()
     if not root then return end
 
     local ball = findBall()
-    if not ball then return end
+    if not ball then prevDist = math.huge; approachCount = 0; return end
 
-    local offset = ball.Position - root.Position
-    local dist = offset.Magnitude
+    local dist = (ball.Position - root.Position).Magnitude
     local now = tick()
 
-    if dist > parryDistance then return end
-    if (now - lastParryTime) < 0.5 then return end
+    -- Checa se a bola esta se aproximando de mim frame a frame
+    if dist < prevDist - 0.1 then
+        approachCount = approachCount + 1
+    else
+        -- Bola parou de se aproximar ou se afastou = nao sou mais o alvo
+        approachCount = 0
+        alreadyParried = false
+    end
+    prevDist = dist
 
-    -- Checa se a bola esta vindo na minha direcao
-    local ballVel = ball.Velocity
-    if ballVel.Magnitude < 1 then return end
-
-    local dirToMe = offset.Unit
-    local ballDir = ballVel.Unit
-    -- Dot negativo = bola vindo na minha direcao
-    local dot = ballDir:Dot(dirToMe)
-    if dot > -0.3 then return end
-
-    lastParryTime = now
-    doParry()
+    -- So da parry se:
+    -- 1. A bola esta se aproximando ha pelo menos 3 frames seguidos (confirmado que sou o alvo)
+    -- 2. Esta dentro da distancia
+    -- 3. Ainda nao dei parry nessa "investida"
+    -- 4. Cooldown minimo
+    if approachCount >= 3 and dist <= parryDistance and not alreadyParried and (now - lastParryTime) > 0.3 then
+        lastParryTime = now
+        alreadyParried = true
+        approachCount = 0
+        doParry()
+    end
 end)
 
 -- ============ CLICK TP (MOUSE) ============
