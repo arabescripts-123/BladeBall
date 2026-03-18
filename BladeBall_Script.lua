@@ -15,6 +15,9 @@ if not guiParent then guiParent = player:WaitForChild("PlayerGui") end
 pcall(function()
     local existing = guiParent:FindFirstChild("BladeBallGui")
     if existing then existing:Destroy() end
+    -- Mata GameAnalyzer se estiver aberto pra nao conflitar
+    local ga = guiParent:FindFirstChild("GameAnalyzerGui")
+    if ga then ga:Destroy() end
 end)
 task.wait(0.3)
 
@@ -248,7 +251,7 @@ local parryKey = Enum.KeyCode.P
 local tpKey = Enum.KeyCode.Q
 local espKey = Enum.KeyCode.J
 local flyKey = Enum.KeyCode.F
-local toggleKey = Enum.KeyCode.Z
+local toggleKey = Enum.KeyCode.X
 
 -- ============ AUTO PARRY ============
 local lastParryTime = 0
@@ -598,4 +601,4 @@ end)
 pcall(function() ScreenGui.Parent = guiParent end)
 if not ScreenGui.Parent then ScreenGui.Parent = player:WaitForChild("PlayerGui") end
 
-print("[BladeBall] Carregado! Z=Menu | P=AutoParry | Q=TP | J=ESP | F=Fly")
+print("[BladeBall] Carregado! X=Menu | P=AutoParry | Q=TP | J=ESP | F=Fly")
