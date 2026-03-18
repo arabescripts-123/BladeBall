@@ -333,8 +333,12 @@ RunService.Heartbeat:Connect(function()
     local dist = (ball.Position - root.Position).Magnitude
     local now = tick()
 
+    -- Calcula velocidade da bola
+    local ballVel = ball.Velocity
+    local ballSpeed = ballVel.Magnitude
+
     -- Checa se a bola esta se aproximando de mim
-    if dist < prevDist - 0.1 then
+    if dist < prevDist - 0.05 then
         approachFrames = approachFrames + 1
     else
         approachFrames = 0
@@ -345,18 +349,21 @@ RunService.Heartbeat:Connect(function()
     -- Verifica se sou o alvo (TargetCharacter aponta pra mim)
     local imTarget = amITarget()
 
-    parryInfoLabel.Text = string.format("Dist:%.0f %s %s",
-        dist,
-        imTarget and "[ALVO]" or "",
-        alreadyParried and "[OK]" or "")
+    -- Distancia ideal: quanto mais rapida a bola, mais longe preciso reagir
+    -- ballSpeed em studs/s, queremos reagir ~0.15s antes do impacto
+    local idealDist = math.clamp(ballSpeed * 0.15, 10, 80)
+
+    parryInfoLabel.Text = string.format("Dist:%.0f Spd:%.0f %s",
+        dist, ballSpeed,
+        imTarget and "[ALVO]" or "")
 
     -- So da parry se:
     -- 1. Sou o alvo da bola (TargetCharacter)
-    -- 2. Bola se aproximando por 3+ frames
-    -- 3. Bola perto (< 18 studs)
+    -- 2. Bola se aproximando por 2+ frames
+    -- 3. Bola dentro da distancia ideal calculada
     -- 4. Nao dei parry nessa investida
     -- 5. Cooldown
-    if imTarget and approachFrames >= 3 and dist <= 18 and not alreadyParried and (now - lastParryTime) > 0.3 then
+    if imTarget and approachFrames >= 2 and dist <= idealDist and not alreadyParried and (now - lastParryTime) > 0.25 then
         lastParryTime = now
         alreadyParried = true
         approachFrames = 0
