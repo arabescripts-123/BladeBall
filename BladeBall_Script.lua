@@ -330,7 +330,7 @@ RunService.RenderStepped:Connect(function()
 
     -- Modo clash: dist < 60, sou alvo, cooldown reduzido
     local isClash = imTarget and dist < 60 and effectiveSpeed > 80
-    local cooldown = isClash and 0.08 or 0.35
+    local cooldown = isClash and 0.08 or 0.50 -- 0.50s normal evita double-parry
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
@@ -348,7 +348,7 @@ RunService.RenderStepped:Connect(function()
         table.insert(checks, string.format("CD:%.2f", timeSinceParry))
         if isClash then table.insert(checks, "CL") end
 
-        local predHitLog = willHit and closingSpeed > 0
+        local predHitLog = willHit and closingSpeed > 20
         local spikeParryLog = suddenSpike and imTarget
         local shouldFire = imTarget and ((approaching or predHitLog) and (eta <= threshold or predHitLog) or spikeParryLog) and not alreadyParried and timeSinceParry > cooldown
 
@@ -366,7 +366,7 @@ RunService.RenderStepped:Connect(function()
     prevDist = dist
 
     -- LOGICA DE PARRY
-    local predHit = willHit and closingSpeed > 0
+    local predHit = willHit and closingSpeed > 20 -- CS minimo 20 pra evitar falso positivo
     local spikeParry = suddenSpike and imTarget
     local shouldParry = imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
 
