@@ -312,7 +312,15 @@ RunService.RenderStepped:Connect(function()
         table.insert(checks, "SPD:" .. speedSource)
         table.insert(checks, ball.Anchored and "ANCHORED!" or "ok")
 
-        local wouldParry = imTgt and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25
+        local wouldParry = false
+        local clashMode = imTgt and dist < 50 and ballSpeed > 80
+        if clashMode and (now - lastParryTime) > 0.05 then
+            wouldParry = true
+        elseif imTgt and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
+            wouldParry = true
+        end
+
+        if clashMode then table.insert(checks, "CLASH!") end
 
         local color = WHITE
         if wouldParry then color = GREEN
@@ -332,12 +340,30 @@ RunService.RenderStepped:Connect(function()
     pcall(function() targetName = ball:GetAttribute("target") or "" end)
     local imTarget = targetName == player.Name
 
+    -- Detecta CLASH: bola perto + velocidade alta + eu sou alvo
+    local CLASH_DIST = 50
+    local CLASH_COOLDOWN = 0.05 -- spam rapido no clash
+    local NORMAL_COOLDOWN = 0.25
+    local inClash = imTarget and dist < CLASH_DIST and ballSpeed > 80
+
+    local cooldown = inClash and CLASH_COOLDOWN or NORMAL_COOLDOWN
+
     -- LOGICA DE PARRY
-    if imTarget and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
+    -- Normal: espera ETA <= threshold
+    -- Clash: spamma parry assim que sou alvo e bola ta perto
+    local shouldParry = false
+    if inClash and (now - lastParryTime) > cooldown then
+        shouldParry = true
+    elseif imTarget and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > cooldown then
+        shouldParry = true
+    end
+
+    if shouldParry then
         lastParryTime = now
         alreadyParried = true
 
-        log("!!! PARRY DISPARADO !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist) .. " Tgt:" .. targetName, RED)
+        local mode = inClash and "CLASH" or "NORMAL"
+        log("!!! PARRY " .. mode .. " !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist) .. " Tgt:" .. targetName, RED)
 
         local results = doParry()
         for _, r in pairs(results) do
