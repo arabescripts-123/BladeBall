@@ -348,7 +348,8 @@ RunService.RenderStepped:Connect(function()
         table.insert(checks, string.format("CD:%.2f", timeSinceParry))
         if isClash then table.insert(checks, "CLASH") end
 
-        local shouldFire = imTarget and (approaching or willHit) and (eta <= threshold or willHit) and not alreadyParried and timeSinceParry > cooldown
+        local predHitLog = willHit and closingSpeed > 0
+        local shouldFire = imTarget and (approaching or predHitLog) and (eta <= threshold or predHitLog) and not alreadyParried and timeSinceParry > cooldown
 
         local color = WHITE
         if shouldFire then color = GREEN
@@ -365,9 +366,10 @@ RunService.RenderStepped:Connect(function()
 
     -- LOGICA DE PARRY
     -- Condicao 1 (normal): sou alvo + approaching + ETA <= threshold
-    -- Condicao 2 (preditivo): sou alvo + predicao diz que vai bater na hitbox
+    -- Condicao 2 (preditivo): sou alvo + bola vindo (CS>0) + predicao diz que vai bater na hitbox
     -- Clash: cooldown reduzido a 0.08s
-    local shouldParry = imTarget and (approaching or willHit) and (eta <= threshold or willHit) and not alreadyParried and timeSinceParry > cooldown
+    local predHit = willHit and closingSpeed > 0
+    local shouldParry = imTarget and (approaching or predHit) and (eta <= threshold or predHit) and not alreadyParried and timeSinceParry > cooldown
 
     if shouldParry then
         lastParryTime = now
