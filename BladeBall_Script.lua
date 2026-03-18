@@ -325,48 +325,34 @@ RunService.Heartbeat:Connect(function()
     local ball = findBall()
     if not ball then
         prevDist = math.huge
-        approachFrames = 0
+        alreadyParried = false
         parryInfoLabel.Text = "Sem bola"
         return
     end
 
     local dist = (ball.Position - root.Position).Magnitude
     local now = tick()
+    local approaching = dist < prevDist
 
-    -- Calcula velocidade da bola
-    local ballVel = ball.Velocity
-    local ballSpeed = ballVel.Magnitude
-
-    -- Checa se a bola esta se aproximando de mim
-    if dist < prevDist - 0.05 then
-        approachFrames = approachFrames + 1
-    else
-        approachFrames = 0
+    if not approaching then
         alreadyParried = false
     end
     prevDist = dist
 
-    -- Verifica se sou o alvo (TargetCharacter aponta pra mim)
     local imTarget = amITarget()
 
-    -- Distancia ideal: quanto mais rapida a bola, mais longe preciso reagir
-    -- ballSpeed em studs/s, queremos reagir ~0.15s antes do impacto
-    local idealDist = math.clamp(ballSpeed * 0.15, 10, 80)
+    -- Calcula tempo ate impacto: distancia / velocidade
+    local ballSpeed = ball.Velocity.Magnitude
+    local timeToHit = ballSpeed > 1 and (dist / ballSpeed) or 999
 
-    parryInfoLabel.Text = string.format("Dist:%.0f Spd:%.0f %s",
-        dist, ballSpeed,
-        imTarget and "[ALVO]" or "")
+    parryInfoLabel.Text = string.format("Dist:%.0f Spd:%.0f T:%.1fs %s",
+        dist, ballSpeed, timeToHit, imTarget and "[ALVO]" or "")
 
-    -- So da parry se:
-    -- 1. Sou o alvo da bola (TargetCharacter)
-    -- 2. Bola se aproximando por 2+ frames
-    -- 3. Bola dentro da distancia ideal calculada
-    -- 4. Nao dei parry nessa investida
-    -- 5. Cooldown
-    if imTarget and approachFrames >= 2 and dist <= idealDist and not alreadyParried and (now - lastParryTime) > 0.25 then
+    -- Parry quando falta ~1 segundo pro impacto (tempo da animacao)
+    -- Clica quando timeToHit <= 1.0s
+    if imTarget and approaching and timeToHit <= 1.0 and not alreadyParried and (now - lastParryTime) > 0.2 then
         lastParryTime = now
         alreadyParried = true
-        approachFrames = 0
         doParry()
     end
 end)
