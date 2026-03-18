@@ -254,61 +254,95 @@ local flyKey = Enum.KeyCode.F
 local toggleKey = Enum.KeyCode.X
 
 -- ============ AUTO PARRY ============
+local ANIMATION_DELAY = 0.5 -- tempo entre clicar e o parry efetivamente bater
+local PING_EXTRA = 0.05 -- margem extra de seguranca
 local lastParryTime = 0
-local prevDist = math.huge
-local approachFrames = 0
 local alreadyParried = false
+local prevDist = math.huge
 
 -- Cache dos remotes do Blade Ball
 local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
 local parryButtonPress = Remotes and Remotes:FindFirstChild("ParryButtonPress")
 local parryAttempt = Remotes and Remotes:FindFirstChild("ParryAttempt")
+local Stats = game:GetService("Stats")
+
+local function getPing()
+    -- Ping em segundos (Stats.Network.ServerStatsItem["Data Ping"] em ms)
+    local ok, ping = pcall(function()
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+    end)
+    if ok and ping then return ping end
+    -- Fallback: tenta player:GetNetworkPing()
+    local ok2, p2 = pcall(function() return player:GetNetworkPing() end)
+    return (ok2 and p2) or 0.08
+end
 
 local function findBall()
     local ballsFolder = workspace:FindFirstChild("Balls")
     if not ballsFolder then return nil end
     for _, b in pairs(ballsFolder:GetChildren()) do
-        local part = b:IsA("BasePart") and b or b:FindFirstChildWhichIsA("BasePart")
+        if b:IsA("BasePart") then return b end
+        local part = b:FindFirstChildWhichIsA("BasePart")
         if part then return part end
     end
     return nil
 end
 
--- Checa se EU sou o alvo da bola
-local function amITarget()
+-- Checa se EU sou o alvo - tenta 3 metodos
+local function amITarget(ball)
     local char = player.Character
     if not char then return false end
-    -- Jogadores Alive tem TargetCharacter ObjectValue
-    local alive = workspace:FindFirstChild("Alive")
-    if not alive then return false end
-    for _, plrModel in pairs(alive:GetChildren()) do
-        local tc = plrModel:FindFirstChild("TargetCharacter")
-        if tc and tc:IsA("ObjectValue") and tc.Value == char then
+
+    -- Metodo 1: Atributo "Target" direto na bola (string com nome do player)
+    pcall(function()
+        local t = ball:GetAttribute("Target")
+        if t and t == player.Name then return true end
+    end)
+
+    -- Metodo 2: ObjectValue "Target" na bola
+    local targetVal = ball:FindFirstChild("Target") or ball.Parent:FindFirstChild("Target")
+    if targetVal then
+        if targetVal:IsA("ObjectValue") and targetVal.Value then
+            if targetVal.Value == char or targetVal.Value == player then return true end
+        elseif targetVal:IsA("StringValue") and targetVal.Value == player.Name then
             return true
         end
     end
+
+    -- Metodo 3: TargetCharacter em workspace.Alive (alguem mirando em mim)
+    local alive = workspace:FindFirstChild("Alive")
+    if alive then
+        for _, plrModel in pairs(alive:GetChildren()) do
+            local tc = plrModel:FindFirstChild("TargetCharacter")
+            if tc and tc:IsA("ObjectValue") and tc.Value == char then
+                return true
+            end
+        end
+    end
+
     return false
 end
 
 local function doParry()
-    -- Metodo 1: BindableEvent ParryButtonPress (como o jogo faz internamente)
+    -- Metodo 1: BindableEvent (como o jogo faz internamente ao clicar)
     pcall(function()
         if parryButtonPress and parryButtonPress:IsA("BindableEvent") then
             parryButtonPress:Fire()
         end
     end)
-    -- Metodo 2: RemoteEvent ParryAttempt
+    -- Metodo 2: RemoteEvent direto ao servidor
     pcall(function()
         if parryAttempt and parryAttempt:IsA("RemoteEvent") then
             parryAttempt:FireServer()
         end
     end)
-    -- Metodo 3: VirtualInputManager click (fallback)
+    -- Metodo 3: Simula click do mouse (fallback)
     pcall(function()
         local vim = game:GetService("VirtualInputManager")
         vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        task.wait(0.03)
-        vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        task.defer(function()
+            vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end)
     end)
 end
 
@@ -331,26 +365,45 @@ RunService.Heartbeat:Connect(function()
     end
 
     local dist = (ball.Position - root.Position).Magnitude
-    local now = tick()
     local approaching = dist < prevDist
 
+    -- Reset parry flag quando bola se afasta (foi rebatida ou mudou de alvo)
     if not approaching then
         alreadyParried = false
     end
     prevDist = dist
 
-    local imTarget = amITarget()
+    -- Velocidade real da bola (AssemblyLinearVelocity e mais preciso)
+    local vel = ball:GetPropertyChangedSignal("AssemblyLinearVelocity") and ball.AssemblyLinearVelocity or ball.Velocity
+    local ballSpeed = vel.Magnitude
 
-    -- Calcula tempo ate impacto: distancia / velocidade
-    local ballSpeed = ball.Velocity.Magnitude
-    local timeToHit = ballSpeed > 1 and (dist / ballSpeed) or 999
+    -- Verifica se a bola esta vindo na minha direcao (dot product)
+    local dirToBall = (root.Position - ball.Position)
+    local dotProduct = dirToBall.Unit:Dot(vel.Unit)
+    local comingAtMe = dotProduct > 0.3 -- bola apontando pra mim
 
-    parryInfoLabel.Text = string.format("Dist:%.0f Spd:%.0f T:%.1fs %s",
-        dist, ballSpeed, timeToHit, imTarget and "[ALVO]" or "")
+    local imTarget = amITarget(ball)
+    local ping = getPing()
 
-    -- Parry quando falta ~1 segundo pro impacto (tempo da animacao)
-    -- Clica quando timeToHit <= 1.0s
-    if imTarget and approaching and timeToHit <= 1.0 and not alreadyParried and (now - lastParryTime) > 0.2 then
+    -- ETA = distancia / velocidade
+    local eta = ballSpeed > 1 and (dist / ballSpeed) or 999
+
+    -- Threshold: preciso clicar ANIMATION_DELAY + ping antes do impacto
+    -- Se eta <= threshold, hora de clicar
+    local threshold = ANIMATION_DELAY + ping + PING_EXTRA
+
+    parryInfoLabel.Text = string.format("D:%.0f S:%.0f T:%.2f P:%dms %s",
+        dist, ballSpeed, eta, ping * 1000, imTarget and "[ALVO]" or (comingAtMe and "[VINDO]" or ""))
+
+    local now = tick()
+
+    -- Condicoes para parry:
+    -- 1. Sou o alvo OU bola vem na minha direcao (dot product)
+    -- 2. Bola se aproximando
+    -- 3. ETA <= threshold (hora de clicar considerando delay + ping)
+    -- 4. Nao ja parried neste ciclo
+    -- 5. Cooldown minimo de 0.3s entre parrys
+    if (imTarget or comingAtMe) and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.3 then
         lastParryTime = now
         alreadyParried = true
         doParry()
