@@ -87,8 +87,8 @@ creditLabel.Size = UDim2.new(1, 0, 0, 18)
 creditLabel.Font = Enum.Font.GothamSemibold
 creditLabel.Text = "By @leo.zppln"
 creditLabel.TextColor3 = Color3.fromRGB(180, 80, 80)
-creditLabel.TextSize = 10
-creditLabel.TextTransparency = 0.3
+creditLabel.TextSize = 13
+creditLabel.TextTransparency = 0.2
 
 -- Dragging
 local dragging, dragInput, dragStart, startPos
@@ -275,38 +275,64 @@ local flyKey = Enum.KeyCode.F
 local toggleKey = Enum.KeyCode.Z
 
 -- ============ AUTO PARRY ============
-local function getBall()
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and (
-            obj.Name:lower():find("ball") or
-            obj.Name:lower():find("bola")
-        ) and not obj:IsDescendantOf(player.Character or Instance.new("Folder")) then
-            return obj
+local cachedBall = nil
+local lastBallSearch = 0
+local lastParryTime = 0
+
+local function findBall()
+    local now = tick()
+    if cachedBall and cachedBall.Parent then return cachedBall end
+    if now - lastBallSearch < 1 then return cachedBall end
+    lastBallSearch = now
+    cachedBall = nil
+
+    -- Pasta Balls (estrutura do Blade Ball)
+    local ballsFolder = workspace:FindFirstChild("Balls")
+    if ballsFolder then
+        for _, b in pairs(ballsFolder:GetChildren()) do
+            if b:IsA("BasePart") then cachedBall = b; return b end
+            if b:IsA("Model") then
+                local p = b:FindFirstChildWhichIsA("BasePart")
+                if p then cachedBall = p; return p end
+            end
         end
     end
-    -- Tenta achar em pastas comuns
-    local balls = workspace:FindFirstChild("Balls")
-    if balls then
-        for _, b in pairs(balls:GetChildren()) do
-            if b:IsA("BasePart") or b:IsA("Model") then
-                local part = b:IsA("Model") and b:FindFirstChildWhichIsA("BasePart") or b
-                if part then return part end
-            end
+
+    -- Fallback: filhos diretos do workspace com "ball" no nome
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("BasePart") and obj.Name:lower():find("ball") then
+            cachedBall = obj; return obj
+        end
+        if obj:IsA("Model") and obj.Name:lower():find("ball") then
+            local p = obj:FindFirstChildWhichIsA("BasePart")
+            if p then cachedBall = p; return p end
         end
     end
     return nil
 end
 
 local function doParry()
+    -- Metodo 1: Fire no RemoteEvent de deflect/parry do Blade Ball
     pcall(function()
-        -- Tenta VirtualInputManager
+        local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        if remotes then
+            for _, r in pairs(remotes:GetDescendants()) do
+                if r:IsA("RemoteEvent") and (r.Name:lower():find("deflect") or r.Name:lower():find("parry") or r.Name:lower():find("block")) then
+                    r:FireServer()
+                    return
+                end
+            end
+        end
+    end)
+    -- Metodo 2: VirtualInputManager click
+    pcall(function()
         local vim = game:GetService("VirtualInputManager")
         vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
         task.wait(0.03)
         vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
     end)
+    -- Metodo 3: mouse1press
     pcall(function()
-        -- Tenta clicar via mouse1press
         if mouse1press then
             mouse1press()
             task.wait(0.03)
@@ -315,26 +341,23 @@ local function doParry()
     end)
 end
 
-local lastParryTime = 0
-
 RunService.Heartbeat:Connect(function()
     if not autoParryEnabled then return end
-    if not player.Character then return end
-    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    pcall(function()
-        local ball = getBall()
-        if not ball then return end
+    local ball = findBall()
+    if not ball then return end
 
-        local dist = (ball.Position - root.Position).Magnitude
-        local now = tick()
+    local dist = (ball.Position - root.Position).Magnitude
+    local now = tick()
 
-        if dist <= parryDistance and (now - lastParryTime) > 0.4 then
-            lastParryTime = now
-            doParry()
-        end
-    end)
+    if dist <= parryDistance and (now - lastParryTime) > 0.35 then
+        lastParryTime = now
+        doParry()
+    end
 end)
 
 -- ============ CLICK TP (MOUSE) ============
