@@ -166,12 +166,20 @@ local prevBallPos = nil
 local prevTime = tick()
 local manualSpeed = 0
 local lastLogTime = 0
-local HITBOX_RADIUS = 15 -- raio da hitbox do parry em studs
+local HITBOX_RADIUS = 15
+local cachedPing = 0.08
+local lastPingTime = 0
+local lastBallVel = Vector3.zero -- pra detectar aceleracao brusca
 
+-- Pre-sample ping a cada 1s (evita overhead por frame)
 local function getPing()
-    local ok, p = pcall(function() return player:GetNetworkPing() end)
-    if ok and p and p > 0 then return p end
-    return 0.08
+    local now = tick()
+    if now - lastPingTime > 1 then
+        lastPingTime = now
+        local ok, p = pcall(function() return player:GetNetworkPing() end)
+        if ok and p and p > 0 then cachedPing = p end
+    end
+    return cachedPing
 end
 
 local function findBall()
@@ -186,41 +194,13 @@ local function findBall()
     return nil
 end
 
--- Velocidade de aproximacao real (dot product)
-local function getClosingSpeed(ball, root)
-    local toPlayer = (root.Position - ball.Position)
-    local dist = toPlayer.Magnitude
-    if dist < 0.1 then return manualSpeed end
-    local dir = toPlayer.Unit
-
-    -- Tenta velocity da bola
-    local ballVel = Vector3.zero
-    pcall(function() ballVel = ball.AssemblyLinearVelocity end)
-    if ballVel.Magnitude < 5 then
-        -- Fallback: calcula velocity manual
-        if prevBallPos then
-            local dt = tick() - prevTime
-            if dt > 0 then
-                ballVel = (ball.Position - prevBallPos) / dt
-            end
-        end
-    end
-
-    -- Dot product: velocidade na direcao do jogador
-    local closingSpeed = ballVel:Dot(dir)
-    -- Se negativo, bola se afasta
-    return closingSpeed, ballVel.Magnitude
-end
-
 local function doParry()
-    -- Prioridade: RemoteEvent direto ao servidor (mais rapido)
     pcall(function()
         if parryAttempt then parryAttempt:FireServer() end
     end)
     pcall(function()
         if parryButtonPress then parryButtonPress:Fire() end
     end)
-    -- VIM como fallback
     pcall(function()
         local vim = game:GetService("VirtualInputManager")
         vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
@@ -273,6 +253,7 @@ RunService.RenderStepped:Connect(function()
             prevBallPos = nil
             prevDist = math.huge
             alreadyParried = false
+            lastBallVel = Vector3.zero
         end
         prevTime = now
         return
@@ -287,19 +268,34 @@ RunService.RenderStepped:Connect(function()
         manualSpeed = (ballPos - prevBallPos).Magnitude / dt
     end
 
-    -- Velocidade de aproximacao real via dot product
-    local closingSpeed, totalSpeed = getClosingSpeed(ball, root)
-    local approaching = closingSpeed > 5 -- bola vem na minha direcao
-
-    -- Predição: onde a bola estara em (ping + buffer) segundos
-    local pingVal = getPing()
+    -- Velocity da bola (AssemblyLV ou manual)
     local ballVel = Vector3.zero
     pcall(function() ballVel = ball.AssemblyLinearVelocity end)
     if ballVel.Magnitude < 5 and prevBallPos and dt > 0 then
         ballVel = (ballPos - prevBallPos) / dt
     end
-    local predictedPos = ballPos + ballVel * (pingVal + 0.05)
-    local predictedDist = (predictedPos - rootPos).Magnitude
+
+    -- Velocidade relativa: considera movimento do jogador
+    local playerVel = Vector3.zero
+    pcall(function() playerVel = root.AssemblyLinearVelocity end)
+    local relativeVel = ballVel - playerVel
+
+    -- Dot product com velocidade relativa (mais preciso)
+    local toPlayer = rootPos - ballPos
+    local dirToPlayer = dist > 0.1 and toPlayer.Unit or Vector3.zero
+    local closingSpeed = relativeVel:Dot(dirToPlayer)
+    local approaching = closingSpeed > 5
+
+    -- Deteccao de aceleracao brusca (anti-curve/pull)
+    local acceleration = (ballVel - lastBallVel).Magnitude
+    local suddenSpike = acceleration > 50 and dt > 0 and dt < 0.5
+    lastBallVel = ballVel
+
+    -- Predicao: posicao futura considerando velocidade do jogador
+    local pingVal = getPing()
+    local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
+    local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
+    local predictedDist = (predictedBallPos - predictedPlayerPos).Magnitude
     local willHit = predictedDist <= HITBOX_RADIUS
 
     prevBallPos = ballPos
@@ -309,19 +305,18 @@ RunService.RenderStepped:Connect(function()
         alreadyParried = false
     end
 
-    -- Velocidade efetiva: usa closingSpeed se positivo, senao manual
-    local effectiveSpeed = closingSpeed > 10 and closingSpeed or (manualSpeed > 10 and manualSpeed or totalSpeed)
+    -- Velocidade efetiva
+    local effectiveSpeed = closingSpeed > 10 and closingSpeed or (manualSpeed > 10 and manualSpeed or ballVel.Magnitude)
     if effectiveSpeed < 1 then effectiveSpeed = 1 end
 
-    -- ETA baseado na velocidade de aproximacao real
+    -- ETA
     local eta = dist / effectiveSpeed
 
-    -- Threshold DINAMICO: ping + constante/velocidade
-    -- Bola rapida = threshold menor (menos margem necessaria)
-    -- Bola lenta = threshold maior (mais tempo pra reagir)
-    local dynamicOffset = math.clamp(15 / effectiveSpeed, 0.03, 0.30)
-    local threshold = pingVal + dynamicOffset
-    if threshold < 0.10 then threshold = 0.10 end
+    -- Threshold ultra-preciso: base minima + buffer dinamico + ping
+    local baseOffset = 0.035
+    local dynamicBuffer = math.clamp(10 / (effectiveSpeed + 1), 0.01, 0.20)
+    local threshold = pingVal + baseOffset + dynamicBuffer
+    if threshold < 0.08 then threshold = 0.08 end
 
     -- Checa se EU sou o alvo
     local targetName = ""
@@ -331,25 +326,27 @@ RunService.RenderStepped:Connect(function()
 
     -- Modo clash: dist < 60, sou alvo, cooldown reduzido
     local isClash = imTarget and dist < 60 and effectiveSpeed > 80
-    local cooldown = isClash and 0.08 or 0.40
+    local cooldown = isClash and 0.08 or 0.35
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
         lastLogTime = now
 
         local checks = {}
-        table.insert(checks, approaching and "APROX:SIM" or "APROX:NAO")
-        table.insert(checks, imTarget and "ALVO:SIM" or ("ALVO:NAO(" .. targetName .. ")"))
-        table.insert(checks, string.format("ETA:%.3f", eta))
-        table.insert(checks, string.format("TH:%.3f", threshold))
+        table.insert(checks, approaching and "AP:Y" or "AP:N")
+        table.insert(checks, imTarget and "TG:Y" or ("TG:N(" .. targetName .. ")"))
+        table.insert(checks, string.format("E:%.3f", eta))
+        table.insert(checks, string.format("T:%.3f", threshold))
         table.insert(checks, string.format("CS:%.0f", closingSpeed))
-        table.insert(checks, willHit and "PRED:HIT" or "PRED:miss")
-        table.insert(checks, alreadyParried and "P:SIM" or "P:NAO")
+        table.insert(checks, willHit and "PH:Y" or "PH:N")
+        table.insert(checks, suddenSpike and "SPIKE!" or "")
+        table.insert(checks, alreadyParried and "P:Y" or "P:N")
         table.insert(checks, string.format("CD:%.2f", timeSinceParry))
-        if isClash then table.insert(checks, "CLASH") end
+        if isClash then table.insert(checks, "CL") end
 
         local predHitLog = willHit and closingSpeed > 0
-        local shouldFire = imTarget and (approaching or predHitLog) and (eta <= threshold or predHitLog) and not alreadyParried and timeSinceParry > cooldown
+        local spikeParry = suddenSpike and imTarget and dist < 80
+        local shouldFire = imTarget and ((approaching or predHitLog) and (eta <= threshold or predHitLog) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
 
         local color = WHITE
         if shouldFire then color = GREEN
@@ -365,19 +362,17 @@ RunService.RenderStepped:Connect(function()
     prevDist = dist
 
     -- LOGICA DE PARRY
-    -- Condicao 1 (normal): sou alvo + approaching + ETA <= threshold
-    -- Condicao 2 (preditivo): sou alvo + bola vindo (CS>0) + predicao diz que vai bater na hitbox
-    -- Clash: cooldown reduzido a 0.08s
     local predHit = willHit and closingSpeed > 0
-    local shouldParry = imTarget and (approaching or predHit) and (eta <= threshold or predHit) and not alreadyParried and timeSinceParry > cooldown
+    local spikeParry = suddenSpike and imTarget and dist < 80
+    local shouldParry = imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
 
     if shouldParry then
         lastParryTime = now
         alreadyParried = true
 
-        local mode = isClash and "CLASH" or (willHit and "PRED" or "NORMAL")
-        log(string.format("!!! PARRY %s !!! ETA:%.3f D:%.0f CS:%.0f Spd:%.0f %s",
-            mode, eta, dist, closingSpeed, effectiveSpeed, targetName), RED)
+        local mode = spikeParry and "SPIKE" or (isClash and "CLASH" or (willHit and "PRED" or "NORMAL"))
+        log(string.format("!!! PARRY %s !!! E:%.3f D:%.0f CS:%.0f V:%.0f A:%.0f %s",
+            mode, eta, dist, closingSpeed, effectiveSpeed, acceleration, targetName), RED)
 
         doParry()
     end
