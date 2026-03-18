@@ -254,90 +254,61 @@ local flyKey = Enum.KeyCode.F
 local toggleKey = Enum.KeyCode.X
 
 -- ============ AUTO PARRY ============
-local ANIMATION_DELAY = 0.5 -- tempo entre clicar e o parry efetivamente bater
-local PING_EXTRA = 0.05 -- margem extra de seguranca
+local SAFETY_OFFSET = 0.05
 local lastParryTime = 0
 local alreadyParried = false
 local prevDist = math.huge
-local lastFrameTime = tick()
+local prevBallPos = nil
+local prevTime = tick()
+local manualSpeed = 0 -- velocidade calculada manualmente como fallback
 
--- Cache dos remotes do Blade Ball
 local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 5)
 local parryButtonPress = Remotes and Remotes:FindFirstChild("ParryButtonPress")
 local parryAttempt = Remotes and Remotes:FindFirstChild("ParryAttempt")
 local Stats = game:GetService("Stats")
 
 local function getPing()
-    -- Ping em segundos (Stats.Network.ServerStatsItem["Data Ping"] em ms)
-    local ok, ping = pcall(function()
+    local ok, p = pcall(function() return player:GetNetworkPing() end)
+    if ok and p and p > 0 then return p end
+    local ok2, p2 = pcall(function()
         return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
     end)
-    if ok and ping then return ping end
-    -- Fallback: tenta player:GetNetworkPing()
-    local ok2, p2 = pcall(function() return player:GetNetworkPing() end)
-    return (ok2 and p2) or 0.08
+    return (ok2 and p2 and p2 > 0) and p2 or 0.08
 end
 
 local function findBall()
-    local ballsFolder = workspace:FindFirstChild("Balls")
-    if not ballsFolder then return nil end
-    for _, b in pairs(ballsFolder:GetChildren()) do
+    local folder = workspace:FindFirstChild("Balls")
+    if not folder then return nil end
+    for _, b in pairs(folder:GetChildren()) do
         if b:IsA("BasePart") then return b end
-        local part = b:FindFirstChildWhichIsA("BasePart")
-        if part then return part end
+        local p = b:FindFirstChildWhichIsA("BasePart")
+        if p then return p end
     end
     return nil
 end
 
--- Checa se EU sou o alvo - tenta 3 metodos
-local function amITarget(ball)
-    local char = player.Character
-    if not char then return false end
-
-    -- Metodo 1: Atributo "Target" direto na bola (string com nome do player)
-    pcall(function()
-        local t = ball:GetAttribute("Target")
-        if t and t == player.Name then return true end
-    end)
-
-    -- Metodo 2: ObjectValue "Target" na bola
-    local targetVal = ball:FindFirstChild("Target") or ball.Parent:FindFirstChild("Target")
-    if targetVal then
-        if targetVal:IsA("ObjectValue") and targetVal.Value then
-            if targetVal.Value == char or targetVal.Value == player then return true end
-        elseif targetVal:IsA("StringValue") and targetVal.Value == player.Name then
-            return true
-        end
-    end
-
-    -- Metodo 3: TargetCharacter em workspace.Alive (alguem mirando em mim)
-    local alive = workspace:FindFirstChild("Alive")
-    if alive then
-        for _, plrModel in pairs(alive:GetChildren()) do
-            local tc = plrModel:FindFirstChild("TargetCharacter")
-            if tc and tc:IsA("ObjectValue") and tc.Value == char then
-                return true
-            end
-        end
-    end
-
-    return false
+local function getBallSpeed(ball)
+    -- Tenta AssemblyLinearVelocity primeiro
+    local ok, vel = pcall(function() return ball.AssemblyLinearVelocity end)
+    if ok and vel and vel.Magnitude > 5 then return vel.Magnitude end
+    -- Tenta Velocity
+    local ok2, vel2 = pcall(function() return ball.Velocity end)
+    if ok2 and vel2 and vel2.Magnitude > 5 then return vel2.Magnitude end
+    -- Fallback: velocidade manual calculada por posicao
+    return manualSpeed > 5 and manualSpeed or 100
 end
 
 local function doParry()
-    -- Metodo 1: BindableEvent (como o jogo faz internamente ao clicar)
     pcall(function()
         if parryButtonPress and parryButtonPress:IsA("BindableEvent") then
             parryButtonPress:Fire()
         end
     end)
-    -- Metodo 2: RemoteEvent direto ao servidor
     pcall(function()
         if parryAttempt and parryAttempt:IsA("RemoteEvent") then
             parryAttempt:FireServer()
         end
     end)
-    -- Metodo 3: Simula click do mouse (fallback)
     pcall(function()
         local vim = game:GetService("VirtualInputManager")
         vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
@@ -347,7 +318,8 @@ local function doParry()
     end)
 end
 
-RunService.Heartbeat:Connect(function()
+-- Usa RenderStepped (roda antes do frame, mais rapido que Heartbeat)
+RunService.RenderStepped:Connect(function()
     if not autoParryEnabled then
         parryInfoLabel.Text = "Auto Parry: OFF"
         return
@@ -360,49 +332,53 @@ RunService.Heartbeat:Connect(function()
     local ball = findBall()
     if not ball then
         prevDist = math.huge
+        prevBallPos = nil
         alreadyParried = false
         parryInfoLabel.Text = "Sem bola"
         return
     end
 
-    local dist = (ball.Position - root.Position).Magnitude
-    local approaching = dist < prevDist
+    local now = tick()
+    local dt = now - prevTime
+    prevTime = now
 
-    -- Reset parry flag quando bola se afasta (foi rebatida ou mudou de alvo)
+    local ballPos = ball.Position
+    local rootPos = root.Position
+    local dist = (ballPos - rootPos).Magnitude
+
+    -- Calcula velocidade manual pela mudanca de posicao da bola
+    if prevBallPos and dt > 0 then
+        manualSpeed = (ballPos - prevBallPos).Magnitude / dt
+    end
+    prevBallPos = ballPos
+
+    local approaching = dist < (prevDist - 0.5) -- margem pra evitar flutuacao
     if not approaching then
         alreadyParried = false
     end
     prevDist = dist
 
-    -- Calcula velocidade manualmente pela mudanca de distancia por frame
-    local now = tick()
-    local dt = now - (lastFrameTime or now)
-    lastFrameTime = now
-    
-    local ballSpeed = 0
-    if dt > 0 and approaching then
-        ballSpeed = (prevDist - dist) / dt -- studs por segundo baseado na aproximacao real
-    end
-    if ballSpeed < 1 then ballSpeed = 1 end
-
-    local imTarget = amITarget(ball)
+    local ballSpeed = getBallSpeed(ball)
     local ping = getPing()
 
-    -- ETA = distancia / velocidade_calculada
+    -- ETA: tempo ate a bola chegar no jogador
     local eta = dist / ballSpeed
 
-    -- Threshold: clicar ANIMATION_DELAY + ping antes do impacto
-    local threshold = ANIMATION_DELAY + ping + PING_EXTRA
+    -- Threshold: ping + margem de seguranca
+    -- Sem animation delay aqui — o click JA dispara o parry, o delay visual nao importa pro servidor
+    local threshold = ping + SAFETY_OFFSET
 
-    parryInfoLabel.Text = string.format("D:%.0f S:%.0f T:%.2f P:%dms %s",
-        dist, ballSpeed, eta, ping * 1000, imTarget and "[ALVO]" or (approaching and "[>>]" or ""))
+    -- Se a bola ta MUITO rapida (eta < ping), threshold minimo de 0.15s
+    if threshold < 0.15 then threshold = 0.15 end
 
-    -- Condicao: bola se aproximando + ETA dentro do threshold
-    -- Nao depende de Target nem velocity — so distancia diminuindo
-    if approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.3 then
+    parryInfoLabel.Text = string.format("D:%.0f V:%.0f ETA:%.3f P:%dms %s",
+        dist, ballSpeed, eta, ping * 1000, approaching and "[>>]" or "")
+
+    -- Dispara parry quando ETA <= threshold E bola se aproximando
+    if approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
         lastParryTime = now
         alreadyParried = true
-        parryInfoLabel.Text = ">>> PARRY! <<<"
+        parryInfoLabel.Text = string.format(">>> PARRY! <<< ETA:%.3f", eta)
         doParry()
     end
 end)
