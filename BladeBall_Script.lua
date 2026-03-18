@@ -177,20 +177,24 @@ end
 local function findBall()
     if not ballsFolder then return nil end
     for _, b in pairs(ballsFolder:GetChildren()) do
-        if b:IsA("BasePart") then return b end
-        local p = b:FindFirstChildWhichIsA("BasePart")
-        if p then return p end
+        -- Pega SOMENTE a bola real (realBall=true, nao Anchored)
+        local part = b:IsA("BasePart") and b or b:FindFirstChildWhichIsA("BasePart")
+        if part and not part.Anchored then
+            local isReal = part:GetAttribute("realBall")
+            if isReal == true or isReal == nil then return part end
+        end
     end
     return nil
 end
 
 local function getBallSpeed(ball)
+    -- Prioriza velocidade manual (mais confiavel pois a bola usa LinearVelocity constraints)
+    if manualSpeed > 10 then return manualSpeed, "Manual" end
     local ok1, v1 = pcall(function() return ball.AssemblyLinearVelocity.Magnitude end)
-    if ok1 and v1 > 5 then return v1, "AssemblyLV" end
+    if ok1 and v1 > 10 then return v1, "AssemblyLV" end
     local ok2, v2 = pcall(function() return ball.Velocity.Magnitude end)
-    if ok2 and v2 > 5 then return v2, "Velocity" end
-    if manualSpeed > 5 then return manualSpeed, "Manual" end
-    return 100, "Fallback"
+    if ok2 and v2 > 10 then return v2, "Velocity" end
+    return manualSpeed > 1 and manualSpeed or 100, "Fallback"
 end
 
 local function doParry()
@@ -277,11 +281,10 @@ RunService.RenderStepped:Connect(function()
     end
     prevBallPos = ball.Position
 
-    local approaching = dist < (prevDist - 0.5)
+    -- Approaching: sem margem rigida, usa historico de 3 frames
+    local approaching = dist < prevDist
     if not approaching then
-        if alreadyParried and dist > prevDist then
-            alreadyParried = false
-        end
+        alreadyParried = false
     end
 
     local ballSpeed, speedSource = getBallSpeed(ball)
@@ -295,16 +298,21 @@ RunService.RenderStepped:Connect(function()
         lastLogTime = now
 
         local checks = {}
+        local targetName2 = ""
+        pcall(function() targetName2 = ball:GetAttribute("target") or "" end)
+        local imTgt = targetName2 == player.Name
+
         table.insert(checks, approaching and "APROX:SIM" or "APROX:NAO")
+        table.insert(checks, imTgt and "ALVO:SIM" or ("ALVO:NAO(" .. targetName2 .. ")"))
         table.insert(checks, string.format("ETA:%.3f", eta))
         table.insert(checks, string.format("THRESH:%.3f", threshold))
         table.insert(checks, eta <= threshold and "ETA<=THRESH:SIM" or "ETA<=THRESH:NAO")
         table.insert(checks, alreadyParried and "JA_PARRIED:SIM" or "JA_PARRIED:NAO")
-        table.insert(checks, string.format("COOLDOWN:%.2f", now - lastParryTime))
-        table.insert(checks, (now - lastParryTime) > 0.25 and "CD_OK:SIM" or "CD_OK:NAO")
-        table.insert(checks, "SPD_SRC:" .. speedSource)
+        table.insert(checks, string.format("CD:%.2f", now - lastParryTime))
+        table.insert(checks, "SPD:" .. speedSource)
+        table.insert(checks, ball.Anchored and "ANCHORED!" or "ok")
 
-        local wouldParry = approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25
+        local wouldParry = imTgt and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25
 
         local color = WHITE
         if wouldParry then color = GREEN
@@ -319,12 +327,17 @@ RunService.RenderStepped:Connect(function()
 
     prevDist = dist
 
-    -- LOGICA DE PARRY (identica ao script principal)
-    if approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
+    -- Checa se EU sou o alvo via atributo "target" na bola
+    local targetName = ""
+    pcall(function() targetName = ball:GetAttribute("target") or "" end)
+    local imTarget = targetName == player.Name
+
+    -- LOGICA DE PARRY
+    if imTarget and approaching and eta <= threshold and not alreadyParried and (now - lastParryTime) > 0.25 then
         lastParryTime = now
         alreadyParried = true
 
-        log("!!! PARRY DISPARADO !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist), RED)
+        log("!!! PARRY DISPARADO !!! ETA:" .. string.format("%.3f", eta) .. " Dist:" .. string.format("%.0f", dist) .. " Tgt:" .. targetName, RED)
 
         local results = doParry()
         for _, r in pairs(results) do
