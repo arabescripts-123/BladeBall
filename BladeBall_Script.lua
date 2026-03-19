@@ -94,25 +94,30 @@ creditLabel.TextSize = 13
 creditLabel.TextTransparency = 0.2
 
 -- Dragging
-local dragging, dragInput, dragStart, startPos
+local dragging = false
+local dragStart, startPos
+
+local function onDragMove(input)
+    if not dragging then return end
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
 
 TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
     end
 end)
-TitleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+TitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
 end)
 UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        onDragMove(input)
     end
 end)
 
@@ -261,10 +266,8 @@ local parryAttempt = Remotes and Remotes:FindFirstChild("ParryAttempt")
 
 local lastParryTime = 0
 local alreadyParried = false
-local prevDist = math.huge
 local prevBallPos = nil
 local prevTime = tick()
-local manualSpeed = 0
 local HITBOX_RADIUS = 18
 local cachedPing = 0.08
 local lastPingTime = 0
@@ -272,7 +275,7 @@ local lastBallVel = Vector3.zero
 local parryCount = 0
 local lastTargetName = ""
 local alivePlayers = 8
-local lastParryCS = 0 -- velocidade do ultimo parry (pra prever o proximo)
+local lastParryCS = 0
 
 local aliveFolder = workspace:FindFirstChild("Alive")
 local function updateAliveCount()
@@ -320,11 +323,12 @@ end
 -- Reset ao trocar de bola
 if ballsFolder then
     ballsFolder.ChildRemoved:Connect(function()
-        prevDist = math.huge
         prevBallPos = nil
         alreadyParried = false
         parryCount = 0
         lastParryCS = 0
+        lastBallVel = Vector3.zero
+        lastTargetName = ""
     end)
 end
 
@@ -350,7 +354,6 @@ task.spawn(function()
         if not ball then
             if prevBallPos then
                 prevBallPos = nil
-                prevDist = math.huge
                 alreadyParried = false
                 lastBallVel = Vector3.zero
             end
@@ -363,10 +366,6 @@ task.spawn(function()
         local ballPos = ball.Position
         local rootPos = root.Position
         local dist = (ballPos - rootPos).Magnitude
-
-        if prevBallPos and dt > 0 then
-            manualSpeed = (ballPos - prevBallPos).Magnitude / dt
-        end
 
         local ballVel = Vector3.zero
         pcall(function() ballVel = ball.AssemblyLinearVelocity end)
@@ -401,16 +400,6 @@ task.spawn(function()
         local is1v1 = alivePlayers <= 2
 
         local pingVal = getPing()
-        local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.0012, 0, 0.18)
-        local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
-        local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
-        local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
-        local curveBonus = (isCurving and imTarget and dist < 60) and 0.04 or 0
-        -- Memoria de velocidade: se o ultimo parry foi rapido, o proximo sera mais rapido
-        -- Usa lastParryCS pra antecipar — quanto mais rapido o ultimo, mais cedo o proximo
-        local memoryBonus = (is1v1 and lastParryCS > 80) and math.clamp(lastParryCS * 0.0004, 0, 0.12) or 0
-        local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus + memoryBonus
-        threshold = math.clamp(threshold, 0.10, 0.95)
 
         local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
         local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
@@ -422,52 +411,54 @@ task.spawn(function()
 
         if not approaching then alreadyParried = false end
 
-        local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
-        local eta = dist / effectiveSpeed
+        -- ========== DECISAO DE PARRY ==========
+        -- Logica simples como jogador: calcula a DISTANCIA ideal pra dar parry
+        -- baseada na velocidade da bola + ping
+        -- Quanto mais rapida a bola, mais longe pode dar parry (ela chega rapido)
+        -- parryDist = velocidade * tempo_de_reacao_necessario
+        local pingVal2 = pingVal
+        local reactionTime = pingVal2 + 0.06 -- ping + margem minima do servidor
+        local parryDist = closingSpeed * reactionTime
+        -- Clamp: minimo 10 studs (muito perto = ja morreu), maximo 100 (muito longe = cedo demais)
+        parryDist = math.clamp(parryDist, 10, 100)
 
-        local isClash = imTarget and dist < 60 and closingSpeed > 80
-        local isUltraClash = imTarget and dist < 40 and closingSpeed > 150
-        local baseCooldown = math.max(0.20, 0.50 - parryCount * 0.03)
-        local cooldown = is1v1 and 0 or (isUltraClash and 0 or (isClash and 0.04 or baseCooldown))
+        -- Bonus progressivo: cada parry consecutivo, a bola volta mais rapida
+        -- Entao aumenta a distancia de parry proporcionalmente
+        local pcBonus = math.clamp(parryCount * 2, 0, 30)
+        parryDist = parryDist + pcBonus
 
-        prevDist = dist
+        -- No 1v1: mais agressivo, aumenta distancia de parry em 20%
+        if is1v1 then parryDist = parryDist * 1.2 end
 
-        parryStatusText = string.format("D:%.0f CS:%.0f T:%.2f PC:%d %s",
-            dist, closingSpeed, threshold, parryCount,
+        local shouldParry = imTarget and approaching and dist <= parryDist and not alreadyParried
+
+        -- Fallback: spike de aceleracao (bola curvou pra mim de repente)
+        if not shouldParry and suddenSpike and imTarget and not alreadyParried then
+            shouldParry = true
+        end
+
+        -- Fallback: predicao de hit (bola vai estar dentro do hitbox no proximo tick)
+        if not shouldParry and willHit and imTarget and closingSpeed > 20 and not alreadyParried then
+            shouldParry = true
+        end
+
+        -- Emergencia: muito perto, ignora tudo
+        local emergDist = is1v1 and 20 or 12
+        if not shouldParry and imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried then
+            shouldParry = true
+        end
+
+        parryStatusText = string.format("D:%.0f CS:%.0f PD:%.0f PC:%d %s",
+            dist, closingSpeed, parryDist, parryCount,
             imTarget and "[ALVO]" or "")
 
-        -- ========== DECISAO DE PARRY ==========
-        local is1v1Fast = is1v1 and parryCount >= 3
-
-        if is1v1Fast then
-            -- MODO 1v1: parry quando ETA < janela fixa baseada na velocidade
-            -- Bola rapida = janela maior (chega rapido), lenta = espera mais perto
-            local window = math.clamp(pingVal + 0.08 + closingSpeed * 0.002, 0.15, 0.70)
-            local shouldParry = imTarget and approaching and eta <= window and not alreadyParried
-            if shouldParry then
-                lastParryTime = now
-                alreadyParried = true
-                parryCount = parryCount + 1
-                lastParryCS = closingSpeed
-                parryStatusText = string.format(">>> 1v1! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
-                doParry()
-            end
-        else
-            -- MODO NORMAL: calculo completo de ETA/threshold
-            local emergDist = is1v1 and 20 or 12
-            local isEmergency = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
-            local predHit = willHit and closingSpeed > 20
-            local spikeParry = suddenSpike and imTarget
-            local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
-
-            if shouldParry then
-                lastParryTime = now
-                alreadyParried = true
-                parryCount = parryCount + 1
-                lastParryCS = closingSpeed
-                parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
-                doParry()
-            end
+        if shouldParry then
+            lastParryTime = now
+            alreadyParried = true
+            parryCount = parryCount + 1
+            lastParryCS = closingSpeed
+            parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+            doParry()
         end
 
         task.wait() -- ~4-5ms no Roblox
@@ -556,7 +547,9 @@ local function enableESP()
 end
 
 local function disableESP()
-    for plr in pairs(espBoxes) do removeESP(plr) end
+    local toRemove = {}
+    for plr in pairs(espBoxes) do table.insert(toRemove, plr) end
+    for _, plr in ipairs(toRemove) do removeESP(plr) end
     if espConnections._added then espConnections._added:Disconnect(); espConnections._added = nil end
     if espConnections._removing then espConnections._removing:Disconnect(); espConnections._removing = nil end
 end
@@ -593,8 +586,10 @@ end
 local function stopFly()
     flying = false
     pcall(function()
-        if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
-        if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
+        if bodyVelocity then bodyVelocity:Destroy() end
+        if bodyGyro then bodyGyro:Destroy() end
+        bodyVelocity = nil
+        bodyGyro = nil
         if player.Character then
             local h = player.Character:FindFirstChildOfClass("Humanoid")
             if h then h.PlatformStand = false end
@@ -709,6 +704,9 @@ end)
 player.CharacterAdded:Connect(function()
     task.wait(0.5)
     if speedEnabled then updateSpeed() end
+    -- Fly: limpa referências antigas e recria se estava voando
+    bodyVelocity = nil
+    bodyGyro = nil
     if flying then startFly() end
 end)
 
