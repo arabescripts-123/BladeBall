@@ -395,8 +395,8 @@ task.spawn(function()
         if targetName ~= lastTargetName then
             alreadyParried = false
             -- PREDICT: target acabou de mudar pra mim
-            -- Se a bola ta perto, vai chegar instantaneamente — parry AGORA
-            if imTarget and not alreadyParried and dist < 60 then
+            -- So ativa se bola ta PERTO E JA vindo na minha direcao
+            if imTarget and not alreadyParried and dist < 35 and closingSpeed > 30 then
                 lastParryTime = now
                 alreadyParried = true
                 parryCount = parryCount + 1
@@ -422,40 +422,43 @@ task.spawn(function()
         if not approaching then alreadyParried = false end
 
         -- ========== DECISAO DE PARRY ==========
-        -- Logica simples como jogador: calcula a DISTANCIA ideal pra dar parry
-        -- baseada na velocidade da bola + ping
-        -- Quanto mais rapida a bola, mais longe pode dar parry (ela chega rapido)
-        -- parryDist = velocidade * tempo_de_reacao_necessario
-        local pingVal2 = pingVal
-        local reactionTime = pingVal2 * 2 + 0.25
-        local parryDist = closingSpeed * reactionTime
-        parryDist = math.clamp(parryDist, 20, 150)
+        -- A janela de parry do jogo: ~0.30s a ~0.60s antes do impacto
+        -- ETA = dist / closingSpeed = tempo ate a bola chegar
+        -- Parry quando ETA entra na janela
+        local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
+        local eta = dist / effectiveSpeed
 
-        local pcBonus = math.clamp(parryCount * 3, 0, 40)
-        parryDist = parryDist + pcBonus
+        -- Janela dinamica: base 0.40s, ajusta com ping e parryCount
+        local windowLate = pingVal + 0.10  -- limite tarde (mais perto = arriscado)
+        local windowEarly = 0.55 + math.clamp(parryCount * 0.015, 0, 0.20) -- limite cedo (escala com PC)
+        if is1v1 then windowEarly = windowEarly + 0.08 end -- 1v1: janela mais ampla
 
-        if is1v1 then parryDist = parryDist * 1.3 end
+        local etaInWindow = imTarget and approaching and eta >= windowLate and eta <= windowEarly and not alreadyParried
 
-        local shouldParry = imTarget and approaching and dist <= parryDist and not alreadyParried
-
-        -- Fallback: spike de aceleracao (bola curvou pra mim de repente)
-        if not shouldParry and suddenSpike and imTarget and not alreadyParried then
-            shouldParry = true
+        -- PREDICT: target mudou pra mim + bola perto e rapida = parry imediato
+        local predictParry = false
+        if targetName ~= lastTargetName then
+            alreadyParried = false
+            if imTarget and dist < 35 and closingSpeed > 30 and not alreadyParried then
+                predictParry = true
+            end
+            lastTargetName = targetName
         end
 
-        -- Fallback: predicao de hit (bola vai estar dentro do hitbox no proximo tick)
-        if not shouldParry and willHit and imTarget and closingSpeed > 20 and not alreadyParried then
-            shouldParry = true
-        end
+        -- Spike: aceleracao brusca na minha direcao
+        local spikeParry = suddenSpike and imTarget and not alreadyParried
 
-        -- Emergencia: muito perto, ignora tudo
+        -- Emergencia: muito perto
         local emergDist = is1v1 and 20 or 12
-        if not shouldParry and imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried then
-            shouldParry = true
-        end
+        local emergParry = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
 
-        parryStatusText = string.format("D:%.0f CS:%.0f PD:%.0f PC:%d %s",
-            dist, closingSpeed, parryDist, parryCount,
+        -- Predicao de hit: bola vai estar no hitbox
+        local predParry = willHit and imTarget and closingSpeed > 20 and not alreadyParried
+
+        local shouldParry = etaInWindow or predictParry or spikeParry or emergParry or predParry
+
+        parryStatusText = string.format("D:%.0f CS:%.0f ETA:%.2f W:%.2f-%.2f PC:%d %s",
+            dist, closingSpeed, eta, windowLate, windowEarly, parryCount,
             imTarget and "[ALVO]" or "")
 
         if shouldParry then
@@ -463,7 +466,7 @@ task.spawn(function()
             alreadyParried = true
             parryCount = parryCount + 1
             lastParryCS = closingSpeed
-            parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+            parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f ETA:%.2f PC:%d", dist, closingSpeed, eta, parryCount)
             doParry()
         end
 
