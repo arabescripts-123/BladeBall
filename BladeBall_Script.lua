@@ -32,7 +32,7 @@ local MainFrame = Instance.new("Frame")
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(18, 12, 12)
 MainFrame.Position = UDim2.new(0.02, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 240, 0, 380)
+MainFrame.Size = UDim2.new(0, 240, 0, 410)
 MainFrame.BackgroundTransparency = 0.05
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 
@@ -242,6 +242,9 @@ local speedBox = createKeyBox("50", UDim2.new(0, 162, 0, 254))
 local flyBtn, flyInd = createButton("Fly", UDim2.new(0, 12, 0, 294))
 local flyKeyBox = createKeyBox("F", UDim2.new(0, 162, 0, 294))
 
+local perfBtn, perfInd = createButton("Performance", UDim2.new(0, 12, 0, 334))
+local perfKeyBox = createKeyBox("G", UDim2.new(0, 162, 0, 334))
+
 -- ============ VARIAVEIS ============
 local autoParryEnabled = false
 local clickTpEnabled = false
@@ -251,6 +254,10 @@ local walkSpeed = 50
 local flying = false
 local flySpeed = 65
 local bodyVelocity, bodyGyro = nil, nil
+
+local perfEnabled = false
+local perfKey = Enum.KeyCode.G
+local savedLighting = {}
 
 local parryKey = Enum.KeyCode.P
 local tpKey = Enum.KeyCode.Q
@@ -479,6 +486,53 @@ RunService.RenderStepped:Connect(function()
     parryInfoLabel.Text = parryStatusText
 end)
 
+-- ============ PERFORMANCE MODE ============
+local function enablePerformance()
+    local lighting = game:GetService("Lighting")
+    savedLighting = {
+        brightness = lighting.Brightness,
+        globalShadows = lighting.GlobalShadows,
+        fogEnd = lighting.FogEnd,
+        quality = settings().Rendering.QualityLevel,
+    }
+    lighting.GlobalShadows = false
+    lighting.FogEnd = 9e9
+    lighting.Brightness = 1
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    for _, v in pairs(lighting:GetChildren()) do
+        if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") or v:IsA("Clouds") then
+            v.Enabled = false
+        end
+    end
+    for _, v in pairs(workspace:GetDescendants()) do
+        pcall(function()
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
+                v.Enabled = false
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            elseif v:IsA("MeshPart") or v:IsA("Part") then
+                v.Material = Enum.Material.SmoothPlastic
+                v.CastShadow = false
+            end
+        end)
+    end
+end
+
+local function disablePerformance()
+    local lighting = game:GetService("Lighting")
+    if savedLighting.globalShadows ~= nil then
+        lighting.GlobalShadows = savedLighting.globalShadows
+        lighting.FogEnd = savedLighting.fogEnd
+        lighting.Brightness = savedLighting.brightness
+        settings().Rendering.QualityLevel = savedLighting.quality
+    end
+    for _, v in pairs(lighting:GetChildren()) do
+        if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") or v:IsA("Clouds") then
+            v.Enabled = true
+        end
+    end
+end
+
 -- ============ CLICK TP (MOUSE) ============
 local mouse = player:GetMouse()
 
@@ -654,6 +708,12 @@ flyBtn.MouseButton1Click:Connect(function()
     flyInd.BackgroundColor3 = flying and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
 end)
 
+perfBtn.MouseButton1Click:Connect(function()
+    perfEnabled = not perfEnabled
+    if perfEnabled then enablePerformance() else disablePerformance() end
+    perfInd.BackgroundColor3 = perfEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
+end)
+
 rejoinBtn.MouseButton1Click:Connect(function()
     local TPS = game:GetService("TeleportService")
     pcall(function() TPS:TeleportToPlaceInstance(game.PlaceId, game.JobId, player) end)
@@ -692,6 +752,12 @@ flyKeyBox.FocusLost:Connect(function()
     if ok and k then flyKey = k; flyKeyBox.Text = t else flyKeyBox.Text = "F"; flyKey = Enum.KeyCode.F end
 end)
 
+perfKeyBox.FocusLost:Connect(function()
+    local t = perfKeyBox.Text:upper()
+    local ok, k = pcall(function() return Enum.KeyCode[t] end)
+    if ok and k then perfKey = k; perfKeyBox.Text = t else perfKeyBox.Text = "G"; perfKey = Enum.KeyCode.G end
+end)
+
 -- ============ KEYBINDS ============
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
@@ -709,6 +775,10 @@ UIS.InputBegan:Connect(function(input, gp)
     elseif input.KeyCode == flyKey then
         if flying then stopFly() else startFly() end
         flyInd.BackgroundColor3 = flying and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
+    elseif input.KeyCode == perfKey then
+        perfEnabled = not perfEnabled
+        if perfEnabled then enablePerformance() else disablePerformance() end
+        perfInd.BackgroundColor3 = perfEnabled and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 60, 60)
     end
 end)
 
@@ -726,4 +796,4 @@ end)
 pcall(function() ScreenGui.Parent = guiParent end)
 if not ScreenGui.Parent then ScreenGui.Parent = player:WaitForChild("PlayerGui") end
 
-print("[BladeBall] Carregado! X=Menu | P=AutoParry | Q=TP | J=ESP | F=Fly")
+print("[BladeBall] Carregado! X=Menu | P=AutoParry | Q=TP | J=ESP | F=Fly | G=Perf")
