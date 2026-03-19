@@ -417,10 +417,9 @@ task.spawn(function()
         -- Quanto mais rapida a bola, mais longe pode dar parry (ela chega rapido)
         -- parryDist = velocidade * tempo_de_reacao_necessario
         local pingVal2 = pingVal
-        local reactionTime = pingVal2 + 0.06 -- ping + margem minima do servidor
+        local reactionTime = pingVal2 * 2 + 0.12
         local parryDist = closingSpeed * reactionTime
-        -- Clamp: minimo 10 studs (muito perto = ja morreu), maximo 100 (muito longe = cedo demais)
-        parryDist = math.clamp(parryDist, 10, 100)
+        parryDist = math.clamp(parryDist, 15, 120)
 
         -- Bonus progressivo: cada parry consecutivo, a bola volta mais rapida
         -- Entao aumenta a distancia de parry proporcionalmente
@@ -646,7 +645,10 @@ flyBtn.MouseButton1Click:Connect(function()
 end)
 
 rejoinBtn.MouseButton1Click:Connect(function()
-    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+    local TPS = game:GetService("TeleportService")
+    pcall(function() TPS:TeleportToPlaceInstance(game.PlaceId, game.JobId, player) end)
+    task.wait(1)
+    pcall(function() TPS:Teleport(game.PlaceId, player) end)
 end)
 
 -- ============ KEY BOXES ============
