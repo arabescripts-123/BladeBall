@@ -272,6 +272,7 @@ local lastBallVel = Vector3.zero
 local parryCount = 0
 local lastTargetName = ""
 local alivePlayers = 8
+local lastParryCS = 0 -- velocidade do ultimo parry (pra prever o proximo)
 
 local aliveFolder = workspace:FindFirstChild("Alive")
 local function updateAliveCount()
@@ -323,6 +324,7 @@ if ballsFolder then
         prevBallPos = nil
         alreadyParried = false
         parryCount = 0
+        lastParryCS = 0
     end)
 end
 
@@ -404,8 +406,11 @@ task.spawn(function()
         local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
         local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
         local curveBonus = (isCurving and imTarget and dist < 60) and 0.04 or 0
-        local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus
-        threshold = math.clamp(threshold, 0.10, 0.90)
+        -- Memoria de velocidade: se o ultimo parry foi rapido, o proximo sera mais rapido
+        -- Usa lastParryCS pra antecipar — quanto mais rapido o ultimo, mais cedo o proximo
+        local memoryBonus = (is1v1 and lastParryCS > 80) and math.clamp(lastParryCS * 0.0004, 0, 0.12) or 0
+        local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus + memoryBonus
+        threshold = math.clamp(threshold, 0.10, 0.95)
 
         local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
         local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
@@ -441,6 +446,7 @@ task.spawn(function()
             lastParryTime = now
             alreadyParried = true
             parryCount = parryCount + 1
+            lastParryCS = closingSpeed
             parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
             doParry()
         end
