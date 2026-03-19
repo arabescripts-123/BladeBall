@@ -396,7 +396,7 @@ task.spawn(function()
             alreadyParried = false
             -- PREDICT: target acabou de mudar pra mim
             -- Se a bola ta perto, vai chegar instantaneamente — parry AGORA
-            if imTarget and not alreadyParried and dist < 60 and closingSpeed > 0 then
+            if imTarget and not alreadyParried and dist < 60 then
                 lastParryTime = now
                 alreadyParried = true
                 parryCount = parryCount + 1
