@@ -308,10 +308,11 @@ RunService.RenderStepped:Connect(function()
     local closingSpeed = relativeVel:Dot(dirToPlayer)
     local approaching = closingSpeed > 5
 
-    -- Deteccao de aceleracao brusca (anti-curve/pull)
-    -- So ativa se bola vindo na minha direcao E perto
+    -- Deteccao de aceleracao e curva
     local acceleration = (ballVel - lastBallVel).Magnitude
     local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 80
+    -- Curva: aceleracao moderada (bola mudando direcao, nao spike extremo)
+    local isCurving = acceleration > 30 and acceleration <= 80 and dt > 0 and dt < 0.5
     lastBallVel = ballVel
 
     -- Threshold inteligente: combina distancia, velocidade, ping e historico
@@ -324,7 +325,9 @@ RunService.RenderStepped:Connect(function()
     local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
     -- Compensacao de ping alto: se ping > 80ms e perto, antecipa mais
     local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
-    local threshold = anticipation + proximityBonus + accelBonus + pingBonus
+    -- Compensacao de curva: bola mudando direcao = antecipa um pouco
+    local curveBonus = (isCurving and imTarget and dist < 60) and 0.04 or 0
+    local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus
     threshold = math.clamp(threshold, 0.10, 0.90)
     local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
     local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
