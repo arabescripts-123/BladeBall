@@ -321,9 +321,10 @@ RunService.RenderStepped:Connect(function()
     -- Bonus de proximidade (perto = mais urgente)
     local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
     -- Bonus de parrys consecutivos: cada parry seguido = bola mais rapida no proximo
-    -- Aumenta threshold progressivamente pra antecipar a aceleracao
     local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
-    local threshold = anticipation + proximityBonus + accelBonus
+    -- Compensacao de ping alto: se ping > 80ms e perto, antecipa mais
+    local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
+    local threshold = anticipation + proximityBonus + accelBonus + pingBonus
     threshold = math.clamp(threshold, 0.10, 0.90)
     local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
     local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
