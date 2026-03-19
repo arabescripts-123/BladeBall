@@ -185,7 +185,7 @@ local prevBallPos = nil
 local prevTime = tick()
 local manualSpeed = 0
 local lastLogTime = 0
-local HITBOX_RADIUS = 15
+local HITBOX_RADIUS = 18
 local cachedPing = 0.08
 local lastPingTime = 0
 local lastBallVel = Vector3.zero
@@ -311,7 +311,7 @@ RunService.RenderStepped:Connect(function()
     -- Deteccao de aceleracao brusca (anti-curve/pull)
     -- So ativa se bola vindo na minha direcao E perto
     local acceleration = (ballVel - lastBallVel).Magnitude
-    local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 50
+    local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 80
     lastBallVel = ballVel
 
     -- Threshold inteligente: combina distancia, velocidade, ping e historico
@@ -322,9 +322,9 @@ RunService.RenderStepped:Connect(function()
     local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
     -- Bonus de parrys consecutivos: cada parry seguido = bola mais rapida no proximo
     -- Aumenta threshold progressivamente pra antecipar a aceleracao
-    local accelBonus = math.clamp(parryCount * 0.03, 0, 0.20)
+    local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
     local threshold = anticipation + proximityBonus + accelBonus
-    threshold = math.clamp(threshold, 0.10, 0.80)
+    threshold = math.clamp(threshold, 0.10, 0.90)
     local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
     local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
     local predictedDist = (predictedBallPos - predictedPlayerPos).Magnitude
@@ -354,7 +354,8 @@ RunService.RenderStepped:Connect(function()
     -- Modo clash: dist < 60, sou alvo, cooldown reduzido
     local isClash = imTarget and dist < 60 and closingSpeed > 80
     local isUltraClash = imTarget and dist < 40 and closingSpeed > 150
-    local cooldown = isUltraClash and 0 or (isClash and 0.04 or 0.50)
+    local baseCooldown = math.max(0.20, 0.50 - parryCount * 0.03)
+    local cooldown = isUltraClash and 0 or (isClash and 0.04 or baseCooldown)
 
     -- Log detalhado a cada 0.4s
     if now - lastLogTime >= 0.4 then
@@ -389,17 +390,20 @@ RunService.RenderStepped:Connect(function()
 
     prevDist = dist
 
+    -- EMERGENCIA: bola muito perto + sou alvo + vindo = parry IMEDIATO (ignora tudo)
+    local isEmergency = imTarget and dist < 12 and closingSpeed > 10 and not alreadyParried
+
     -- LOGICA DE PARRY
-    local predHit = willHit and closingSpeed > 20 -- CS minimo 20 pra evitar falso positivo
+    local predHit = willHit and closingSpeed > 20
     local spikeParry = suddenSpike and imTarget
-    local shouldParry = imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown
+    local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
 
     if shouldParry then
         lastParryTime = now
         alreadyParried = true
         parryCount = parryCount + 1
 
-        local mode = spikeParry and "SPIKE" or (isUltraClash and "ULTRA" or (isClash and "CLASH" or (willHit and "PRED" or "NORMAL")))
+        local mode = isEmergency and "EMERG" or (spikeParry and "SPIKE" or (isUltraClash and "ULTRA" or (isClash and "CLASH" or (willHit and "PRED" or "NORMAL"))))
         log(string.format("!!! PARRY %s !!! E:%.3f D:%.0f CS:%.0f V:%.0f A:%.0f PC:%d %s",
             mode, eta, dist, closingSpeed, effectiveSpeed, acceleration, parryCount, targetName), RED)
 
