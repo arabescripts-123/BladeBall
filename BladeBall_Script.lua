@@ -437,13 +437,13 @@ task.spawn(function()
             imTarget and "[ALVO]" or "")
 
         -- ========== DECISAO DE PARRY ==========
-        -- No 1v1 com bola rapida: abordagem AGRESSIVA
-        -- Parry assim que detecta que sou alvo + bola vindo + distancia diminuindo
         local is1v1Fast = is1v1 and parryCount >= 3
 
         if is1v1Fast then
-            -- MODO 1v1 AGRESSIVO: parry no INSTANTE que sou alvo e bola se aproxima
-            local shouldParry = imTarget and approaching and not alreadyParried
+            -- MODO 1v1: parry quando ETA < janela fixa baseada na velocidade
+            -- Bola rapida = janela maior (chega rapido), lenta = espera mais perto
+            local window = math.clamp(pingVal + 0.08 + closingSpeed * 0.002, 0.15, 0.70)
+            local shouldParry = imTarget and approaching and eta <= window and not alreadyParried
             if shouldParry then
                 lastParryTime = now
                 alreadyParried = true
