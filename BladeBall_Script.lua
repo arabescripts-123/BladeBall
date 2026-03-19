@@ -394,6 +394,16 @@ task.spawn(function()
 
         if targetName ~= lastTargetName then
             alreadyParried = false
+            -- PREDICT: target acabou de mudar pra mim
+            -- Se a bola ta perto, vai chegar instantaneamente — parry AGORA
+            if imTarget and not alreadyParried and dist < 60 and closingSpeed > 0 then
+                lastParryTime = now
+                alreadyParried = true
+                parryCount = parryCount + 1
+                lastParryCS = closingSpeed
+                parryStatusText = string.format(">>> PREDICT! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+                doParry()
+            end
             lastTargetName = targetName
         end
 
@@ -417,17 +427,14 @@ task.spawn(function()
         -- Quanto mais rapida a bola, mais longe pode dar parry (ela chega rapido)
         -- parryDist = velocidade * tempo_de_reacao_necessario
         local pingVal2 = pingVal
-        local reactionTime = pingVal2 * 2 + 0.12
+        local reactionTime = pingVal2 * 2 + 0.25
         local parryDist = closingSpeed * reactionTime
-        parryDist = math.clamp(parryDist, 15, 120)
+        parryDist = math.clamp(parryDist, 20, 150)
 
-        -- Bonus progressivo: cada parry consecutivo, a bola volta mais rapida
-        -- Entao aumenta a distancia de parry proporcionalmente
-        local pcBonus = math.clamp(parryCount * 2, 0, 30)
+        local pcBonus = math.clamp(parryCount * 3, 0, 40)
         parryDist = parryDist + pcBonus
 
-        -- No 1v1: mais agressivo, aumenta distancia de parry em 20%
-        if is1v1 then parryDist = parryDist * 1.2 end
+        if is1v1 then parryDist = parryDist * 1.3 end
 
         local shouldParry = imTarget and approaching and dist <= parryDist and not alreadyParried
 
