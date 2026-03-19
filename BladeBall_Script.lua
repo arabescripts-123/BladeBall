@@ -326,118 +326,132 @@ if ballsFolder then
     end)
 end
 
-RunService.RenderStepped:Connect(function()
-    if not autoParryEnabled then
-        parryInfoLabel.Text = "Auto Parry: OFF"
-        return
-    end
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+-- Auto parry loop turbo (~4ms) — roda independente do framerate
+local parryStatusText = "Auto Parry: OFF"
 
-    local ball = findBall()
-    local now = tick()
-    local dt = now - prevTime
-
-    if not ball then
-        if prevBallPos then
-            prevBallPos = nil
-            prevDist = math.huge
-            alreadyParried = false
-            lastBallVel = Vector3.zero
+task.spawn(function()
+    while true do
+        if not autoParryEnabled then
+            parryStatusText = "Auto Parry: OFF"
+            task.wait(0.1)
+            continue
         end
+
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then task.wait(0.01) continue end
+
+        local ball = findBall()
+        local now = tick()
+        local dt = now - prevTime
+
+        if not ball then
+            if prevBallPos then
+                prevBallPos = nil
+                prevDist = math.huge
+                alreadyParried = false
+                lastBallVel = Vector3.zero
+            end
+            prevTime = now
+            parryStatusText = "Sem bola"
+            task.wait(0.01)
+            continue
+        end
+
+        local ballPos = ball.Position
+        local rootPos = root.Position
+        local dist = (ballPos - rootPos).Magnitude
+
+        if prevBallPos and dt > 0 then
+            manualSpeed = (ballPos - prevBallPos).Magnitude / dt
+        end
+
+        local ballVel = Vector3.zero
+        pcall(function() ballVel = ball.AssemblyLinearVelocity end)
+        if ballVel.Magnitude < 5 and prevBallPos and dt > 0 then
+            ballVel = (ballPos - prevBallPos) / dt
+        end
+
+        local playerVel = Vector3.zero
+        pcall(function() playerVel = root.AssemblyLinearVelocity end)
+        local relativeVel = ballVel - playerVel
+
+        local toPlayer = rootPos - ballPos
+        local dirToPlayer = dist > 0.1 and toPlayer.Unit or Vector3.zero
+        local closingSpeed = relativeVel:Dot(dirToPlayer)
+        local approaching = closingSpeed > 5
+
+        local acceleration = (ballVel - lastBallVel).Magnitude
+        local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 80
+        local isCurving = acceleration > 30 and acceleration <= 80 and dt > 0 and dt < 0.5
+        lastBallVel = ballVel
+
+        local targetName = ""
+        pcall(function() targetName = ball:GetAttribute("target") or "" end)
+        local imTarget = targetName == player.Name
+        local timeSinceParry = now - lastParryTime
+
+        if targetName ~= lastTargetName then
+            alreadyParried = false
+            lastTargetName = targetName
+        end
+
+        local is1v1 = alivePlayers <= 2
+
+        local pingVal = getPing()
+        local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.0012, 0, 0.18)
+        local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
+        local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
+        local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
+        local curveBonus = (isCurving and imTarget and dist < 60) and 0.04 or 0
+        local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus
+        threshold = math.clamp(threshold, 0.10, 0.90)
+
+        local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
+        local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
+        local predictedDist = (predictedBallPos - predictedPlayerPos).Magnitude
+        local willHit = predictedDist <= HITBOX_RADIUS
+
+        prevBallPos = ballPos
         prevTime = now
-        parryInfoLabel.Text = "Sem bola"
-        return
+
+        if not approaching then alreadyParried = false end
+
+        local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
+        local eta = dist / effectiveSpeed
+
+        local isClash = imTarget and dist < 60 and closingSpeed > 80
+        local isUltraClash = imTarget and dist < 40 and closingSpeed > 150
+        local baseCooldown = math.max(0.20, 0.50 - parryCount * 0.03)
+        local cooldown = is1v1 and 0 or (isUltraClash and 0 or (isClash and 0.04 or baseCooldown))
+
+        prevDist = dist
+
+        parryStatusText = string.format("D:%.0f CS:%.0f T:%.2f PC:%d %s",
+            dist, closingSpeed, threshold, parryCount,
+            imTarget and "[ALVO]" or "")
+
+        local emergDist = is1v1 and 20 or 12
+        local isEmergency = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
+        local predHit = willHit and closingSpeed > 20
+        local spikeParry = suddenSpike and imTarget
+        local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
+
+        if shouldParry then
+            lastParryTime = now
+            alreadyParried = true
+            parryCount = parryCount + 1
+            parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+            doParry()
+        end
+
+        task.wait() -- ~4-5ms no Roblox
     end
+end)
 
-    local ballPos = ball.Position
-    local rootPos = root.Position
-    local dist = (ballPos - rootPos).Magnitude
-
-    if prevBallPos and dt > 0 then
-        manualSpeed = (ballPos - prevBallPos).Magnitude / dt
-    end
-
-    local ballVel = Vector3.zero
-    pcall(function() ballVel = ball.AssemblyLinearVelocity end)
-    if ballVel.Magnitude < 5 and prevBallPos and dt > 0 then
-        ballVel = (ballPos - prevBallPos) / dt
-    end
-
-    local playerVel = Vector3.zero
-    pcall(function() playerVel = root.AssemblyLinearVelocity end)
-    local relativeVel = ballVel - playerVel
-
-    local toPlayer = rootPos - ballPos
-    local dirToPlayer = dist > 0.1 and toPlayer.Unit or Vector3.zero
-    local closingSpeed = relativeVel:Dot(dirToPlayer)
-    local approaching = closingSpeed > 5
-
-    local acceleration = (ballVel - lastBallVel).Magnitude
-    local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 80
-    local isCurving = acceleration > 30 and acceleration <= 80 and dt > 0 and dt < 0.5
-    lastBallVel = ballVel
-
-    local targetName = ""
-    pcall(function() targetName = ball:GetAttribute("target") or "" end)
-    local imTarget = targetName == player.Name
-    local timeSinceParry = now - lastParryTime
-
-    if targetName ~= lastTargetName then
-        alreadyParried = false
-        lastTargetName = targetName
-    end
-
-    local is1v1 = alivePlayers <= 2
-
-    local pingVal = getPing()
-    local anticipation = pingVal + 0.05 + math.clamp(closingSpeed * 0.0012, 0, 0.18)
-    local proximityBonus = math.clamp(20 / (dist + 1), 0, 0.20)
-    local accelBonus = math.clamp(parryCount * 0.03, 0, 0.25)
-    local pingBonus = (pingVal > 0.08 and dist < 20) and math.clamp((pingVal - 0.08) * 0.5, 0, 0.05) or 0
-    local curveBonus = (isCurving and imTarget and dist < 60) and 0.04 or 0
-    local threshold = anticipation + proximityBonus + accelBonus + pingBonus + curveBonus
-    threshold = math.clamp(threshold, 0.10, 0.90)
-
-    local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
-    local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
-    local predictedDist = (predictedBallPos - predictedPlayerPos).Magnitude
-    local willHit = predictedDist <= HITBOX_RADIUS
-
-    prevBallPos = ballPos
-    prevTime = now
-
-    if not approaching then alreadyParried = false end
-
-    local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
-    local eta = dist / effectiveSpeed
-
-    local isClash = imTarget and dist < 60 and closingSpeed > 80
-    local isUltraClash = imTarget and dist < 40 and closingSpeed > 150
-    local baseCooldown = math.max(0.20, 0.50 - parryCount * 0.03)
-    local cooldown = is1v1 and 0 or (isUltraClash and 0 or (isClash and 0.04 or baseCooldown))
-
-    prevDist = dist
-
-    parryInfoLabel.Text = string.format("D:%.0f CS:%.0f T:%.2f PC:%d %s",
-        dist, closingSpeed, threshold, parryCount,
-        imTarget and "[ALVO]" or "")
-
-    local emergDist = is1v1 and 20 or 12
-    local isEmergency = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
-    local predHit = willHit and closingSpeed > 20
-    local spikeParry = suddenSpike and imTarget
-    local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
-
-    if shouldParry then
-        lastParryTime = now
-        alreadyParried = true
-        parryCount = parryCount + 1
-        parryInfoLabel.Text = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
-        doParry()
-    end
+-- GUI update no render thread (nao precisa ser rapido)
+RunService.RenderStepped:Connect(function()
+    parryInfoLabel.Text = parryStatusText
 end)
 
 -- ============ CLICK TP (MOUSE) ============
