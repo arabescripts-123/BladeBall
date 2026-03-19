@@ -436,19 +436,38 @@ task.spawn(function()
             dist, closingSpeed, threshold, parryCount,
             imTarget and "[ALVO]" or "")
 
-        local emergDist = is1v1 and 20 or 12
-        local isEmergency = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
-        local predHit = willHit and closingSpeed > 20
-        local spikeParry = suddenSpike and imTarget
-        local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
+        -- ========== DECISAO DE PARRY ==========
+        -- No 1v1 com bola rapida: abordagem AGRESSIVA
+        -- Parry assim que detecta que sou alvo + bola vindo + distancia diminuindo
+        local is1v1Fast = is1v1 and parryCount >= 3
 
-        if shouldParry then
-            lastParryTime = now
-            alreadyParried = true
-            parryCount = parryCount + 1
-            lastParryCS = closingSpeed
-            parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
-            doParry()
+        if is1v1Fast then
+            -- MODO 1v1 AGRESSIVO: parry no INSTANTE que sou alvo e bola se aproxima
+            local shouldParry = imTarget and approaching and not alreadyParried
+            if shouldParry then
+                lastParryTime = now
+                alreadyParried = true
+                parryCount = parryCount + 1
+                lastParryCS = closingSpeed
+                parryStatusText = string.format(">>> 1v1! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+                doParry()
+            end
+        else
+            -- MODO NORMAL: calculo completo de ETA/threshold
+            local emergDist = is1v1 and 20 or 12
+            local isEmergency = imTarget and dist < emergDist and closingSpeed > 10 and not alreadyParried
+            local predHit = willHit and closingSpeed > 20
+            local spikeParry = suddenSpike and imTarget
+            local shouldParry = isEmergency or (imTarget and ((approaching or predHit) and (eta <= threshold or predHit) or spikeParry) and not alreadyParried and timeSinceParry > cooldown)
+
+            if shouldParry then
+                lastParryTime = now
+                alreadyParried = true
+                parryCount = parryCount + 1
+                lastParryCS = closingSpeed
+                parryStatusText = string.format(">>> PARRY! <<< D:%.0f CS:%.0f PC:%d", dist, closingSpeed, parryCount)
+                doParry()
+            end
         end
 
         task.wait() -- ~4-5ms no Roblox
