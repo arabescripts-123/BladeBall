@@ -40,6 +40,18 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.TextSize = 14
 Instance.new("UICorner", title).CornerRadius = UDim.new(0, 10)
 
+-- Botao rejoin
+local rejoinBtn = Instance.new("TextButton")
+rejoinBtn.Parent = frame
+rejoinBtn.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
+rejoinBtn.Position = UDim2.new(1, -150, 0, 3)
+rejoinBtn.Size = UDim2.new(0, 70, 0, 24)
+rejoinBtn.Font = Enum.Font.GothamBold
+rejoinBtn.Text = "REJOIN"
+rejoinBtn.TextColor3 = Color3.new(1, 1, 1)
+rejoinBtn.TextSize = 11
+Instance.new("UICorner", rejoinBtn).CornerRadius = UDim.new(0, 6)
+
 -- Botao copiar
 local copyBtn = Instance.new("TextButton")
 copyBtn.Parent = frame
@@ -123,6 +135,13 @@ copyBtn.MouseButton1Click:Connect(function()
         copyBtn.Text = "SEM SUPORTE"
     end
     task.delay(2, function() copyBtn.Text = "COPIAR" end)
+end)
+
+-- Botao rejoin
+rejoinBtn.MouseButton1Click:Connect(function()
+    rejoinBtn.Text = "SAINDO..."
+    local TPS = game:GetService("TeleportService")
+    TPS:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
 end)
 
 -- ============ TESTES INICIAIS ============
