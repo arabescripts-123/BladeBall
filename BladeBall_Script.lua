@@ -334,6 +334,9 @@ local function findBall()
 end
 
 local function doParry()
+    -- Humanizer: random delay 5-15ms (menos detectável)
+    task.wait(math.random(5,15)/1000)
+    
     pcall(function() if parryAttempt then parryAttempt:FireServer() end end)
     pcall(function() if parryButtonPress then parryButtonPress:Fire() end end)
     pcall(function()
