@@ -333,6 +333,18 @@ local function findBall()
     return nil
 end
 
+local function isBallActuallyComing(ballPos, ballVel, playerPos)
+    local toPlayer = (playerPos - ballPos)
+    local dist = toPlayer.Magnitude
+    if dist < 1 then return true end
+
+    local dir = toPlayer.Unit
+    local velDir = ballVel.Magnitude > 0 and ballVel.Unit or Vector3.zero
+
+    local alignment = velDir:Dot(dir)
+    return alignment > 0.75
+end
+
 local function doParry()
     -- Humanizer: random delay 5-15ms (menos detectável)
     task.wait(math.random(5,15)/1000)
@@ -425,6 +437,10 @@ task.spawn(function()
         end
         local isDirectHit = angleToPlayer < 25
         
+        -- Curve strength (melhorada)
+        local curveStrength = directionChange * (ballVel.Magnitude / 50)
+        local isStrongCurve = curveStrength > 20
+        
         lastBallVel = ballVel
 
         local targetName = ""
@@ -455,7 +471,7 @@ task.spawn(function()
         local hitTime = predictHitTime(ballPos, ballVel, rootPos, playerVel)
         local eta = hitTime
         
-        local lookAheadTime = pingVal + 0.06
+        local lookAheadTime = pingVal + math.clamp(dist / 200, 0.03, 0.12)
         local futureBall = ballPos + ballVel * lookAheadTime
         local futureDist = (futureBall - rootPos).Magnitude
         local futureHit = futureDist < (HITBOX_RADIUS + 2) and closingSpeed > 15 and imTarget
@@ -468,7 +484,7 @@ task.spawn(function()
         prevBallPos = ballPos
         prevTime = now
 
-        if not approaching or dist > 80 then alreadyParried = false end
+        if (not approaching and dist > 25) or dist > 80 then alreadyParried = false end
 
         -- ========== DECISAO DE PARRY ==========
         -- A janela de parry do jogo: ~0.30s a ~0.60s antes do impacto
@@ -480,7 +496,7 @@ task.spawn(function()
         local skillFactor = math.clamp(parryCount * 0.01, 0, 0.15)
         local windowLate = 0.28 + pingVal * 0.8
         local windowEarly = 0.55 + skillFactor
-        if isCurving then windowEarly = windowEarly + 0.08 end
+        if isStrongCurve then windowEarly = windowEarly + 0.12 end
         if is1v1 then 
             windowEarly = windowEarly + 0.05 
             windowLate = windowLate - 0.03 
@@ -499,18 +515,31 @@ task.spawn(function()
         -- Predicao de hit: bola vai estar no hitbox
         local predParry = willHit and imTarget and closingSpeed > 20 and not alreadyParried
 
-        local shouldParry = 
-            (emergParry and isDirectHit) or
-            spikeParry or
-            futureHit or
-            predParry or
-            etaInWindow
+        local shouldParry = false
+
+        -- PRIORIDADE MÁXIMA
+        if emergParry and isDirectHit then
+            shouldParry = true
+        -- PREDIÇÃO REAL
+        elseif predParry then
+            shouldParry = true
+        -- ETA CONFIÁVEL  
+        elseif etaInWindow and isDirectHit then
+            shouldParry = true
+        -- CURVA CONTROLADA
+        elseif isStrongCurve and futureHit then
+            shouldParry = true
+        -- SPIKE FORTE
+        elseif spikeParry and closingSpeed > 60 then
+            shouldParry = true
+        end
 
         parryStatusText = string.format("D:%.0f CS:%.0f ETA:%.2f W:%.2f-%.2f PC:%d %s",
             dist, closingSpeed, eta, windowLate, windowEarly, parryCount,
             imTarget and "[ALVO]" or "")
 
-        if shouldParry and (now - lastParryTime) > MIN_PARRY_DELAY then
+        local dynamicDelay = math.clamp(0.08 + (pingVal * 0.5), 0.08, 0.18)
+        if shouldParry and (now - lastParryTime) > dynamicDelay then
             lastParryTime = now
             alreadyParried = true
             parryCount = parryCount + 1
