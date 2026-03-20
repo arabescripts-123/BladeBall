@@ -465,7 +465,7 @@ task.spawn(function()
         prevBallPos = ballPos
         prevTime = now
 
-        if not approaching then alreadyParried = false end
+        if not approaching or dist > 80 then alreadyParried = false end
 
         -- ========== DECISAO DE PARRY ==========
         -- A janela de parry do jogo: ~0.30s a ~0.60s antes do impacto
@@ -499,7 +499,6 @@ task.spawn(function()
         local shouldParry = 
             (emergParry and isDirectHit) or
             spikeParry or
-            predictParry or
             futureHit or
             predParry or
             etaInWindow
