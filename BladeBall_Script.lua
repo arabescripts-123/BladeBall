@@ -276,6 +276,8 @@ local alreadyParried = false
 local prevBallPos = nil
 local prevTime = tick()
 local HITBOX_RADIUS = 18
+local HITBOX_PRED = HITBOX_RADIUS + 2
+local MIN_PARRY_DELAY = 0.10
 local cachedPing = 0.08
 local lastPingTime = 0
 local lastBallVel = Vector3.zero
@@ -283,6 +285,20 @@ local parryCount = 0
 local lastTargetName = ""
 local alivePlayers = 8
 local lastParryCS = 0
+
+local function predictHitTime(ballPos, ballVel, playerPos, playerVel)
+    local relPos = ballPos - playerPos
+    local relVel = ballVel - playerVel
+    local a = relVel:Dot(relVel)
+    local b = 2 * relPos:Dot(relVel)
+    local c = relPos:Dot(relPos) - (HITBOX_PRED * HITBOX_PRED)
+    local disc = b*b - 4*a*c
+    if disc < 0 or a < 0.1 then return math.huge end
+    local t1 = (-b - math.sqrt(disc)) / (2*a)
+    local t2 = (-b + math.sqrt(disc)) / (2*a)
+    local t = (t1 > 0 and t1) or t2
+    return t > 0 and t or math.huge
+end
 
 local aliveFolder = workspace:FindFirstChild("Alive")
 local function updateAliveCount()
@@ -391,7 +407,21 @@ task.spawn(function()
 
         local acceleration = (ballVel - lastBallVel).Magnitude
         local suddenSpike = acceleration > 80 and dt > 0 and dt < 0.5 and closingSpeed > 30 and dist < 80
-        local isCurving = acceleration > 30 and acceleration <= 80 and dt > 0 and dt < 0.5
+        -- Safe direction change
+        local directionChange = 0
+        if lastBallVel.Magnitude > 5 and ballVel.Magnitude > 5 then
+            local dot = math.clamp(lastBallVel.Unit:Dot(ballVel.Unit), -1, 1)
+            directionChange = math.deg(math.acos(dot))
+        end
+        local isCurving = directionChange > 15
+        
+        -- Angle to player
+        local angleToPlayer = 0
+        if ballVel.Magnitude > 5 then
+            angleToPlayer = math.deg(math.acos(math.clamp(ballVel.Unit:Dot(dirToPlayer), -1, 1)))
+        end
+        local isDirectHit = angleToPlayer < 25
+        
         lastBallVel = ballVel
 
         local targetName = ""
@@ -417,6 +447,15 @@ task.spawn(function()
         local is1v1 = alivePlayers <= 2
 
         local pingVal = getPing()
+        
+        -- Advanced ETA + lookahead
+        local hitTime = predictHitTime(ballPos, ballVel, rootPos, playerVel)
+        local eta = hitTime
+        
+        local lookAheadTime = pingVal + 0.06
+        local futureBall = ballPos + ballVel * lookAheadTime
+        local futureDist = (futureBall - rootPos).Magnitude
+        local futureHit = futureDist < (HITBOX_RADIUS + 2) and closingSpeed > 15 and imTarget
 
         local predictedBallPos = ballPos + ballVel * (pingVal + 0.04)
         local predictedPlayerPos = rootPos + playerVel * (pingVal + 0.04)
@@ -432,25 +471,20 @@ task.spawn(function()
         -- A janela de parry do jogo: ~0.30s a ~0.60s antes do impacto
         -- ETA = dist / closingSpeed = tempo ate a bola chegar
         -- Parry quando ETA entra na janela
-        local effectiveSpeed = closingSpeed > 5 and closingSpeed or 1
-        local eta = dist / effectiveSpeed
+-- ETA substituída por hitTime (já definida acima)
 
-        -- Janela dinamica: base 0.40s, ajusta com ping e parryCount
-        local windowLate = pingVal + 0.10  -- limite tarde (mais perto = arriscado)
-        local windowEarly = 0.55 + math.clamp(parryCount * 0.015, 0, 0.20) -- limite cedo (escala com PC)
-        if is1v1 then windowEarly = windowEarly + 0.08 end -- 1v1: janela mais ampla
-
+        -- Janela dinâmica refinada
+        local skillFactor = math.clamp(parryCount * 0.01, 0, 0.15)
+        local windowLate = 0.28 + pingVal * 0.8
+        local windowEarly = 0.55 + skillFactor
+        if isCurving then windowEarly = windowEarly + 0.08 end
+        if is1v1 then 
+            windowEarly = windowEarly + 0.05 
+            windowLate = windowLate - 0.03 
+        end
         local etaInWindow = imTarget and approaching and eta >= windowLate and eta <= windowEarly and not alreadyParried
 
-        -- PREDICT: target mudou pra mim + bola perto e rapida = parry imediato
-        local predictParry = false
-        if targetName ~= lastTargetName then
-            alreadyParried = false
-            if imTarget and dist < 35 and closingSpeed > 30 and not alreadyParried then
-                predictParry = true
-            end
-            lastTargetName = targetName
-        end
+-- predictParry já tratado no bloco único acima (removido duplicado)
 
         -- Spike: aceleracao brusca na minha direcao
         local spikeParry = suddenSpike and imTarget and not alreadyParried
@@ -462,13 +496,19 @@ task.spawn(function()
         -- Predicao de hit: bola vai estar no hitbox
         local predParry = willHit and imTarget and closingSpeed > 20 and not alreadyParried
 
-        local shouldParry = etaInWindow or predictParry or spikeParry or emergParry or predParry
+        local shouldParry = 
+            (emergParry and isDirectHit) or
+            spikeParry or
+            predictParry or
+            futureHit or
+            predParry or
+            etaInWindow
 
         parryStatusText = string.format("D:%.0f CS:%.0f ETA:%.2f W:%.2f-%.2f PC:%d %s",
             dist, closingSpeed, eta, windowLate, windowEarly, parryCount,
             imTarget and "[ALVO]" or "")
 
-        if shouldParry then
+        if shouldParry and (now - lastParryTime) > MIN_PARRY_DELAY then
             lastParryTime = now
             alreadyParried = true
             parryCount = parryCount + 1
@@ -477,7 +517,7 @@ task.spawn(function()
             doParry()
         end
 
-        task.wait() -- ~4-5ms no Roblox
+        RunService.Heartbeat:Wait()
     end
 end)
 
